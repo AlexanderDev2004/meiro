@@ -296,7 +296,8 @@ func (s *linuxSession) publishVolume() {
 	s.volumeTimer = nil
 	if !s.closed && s.state.Volume != s.props.GetMust(playerInterface, "Volume") {
 		if err := s.setProperty("Volume", s.state.Volume); err != nil {
-			s.fail(err)
+			// No caller is waiting on a timer; the next Update reports it.
+			s.err = err
 		}
 	}
 }

@@ -162,7 +162,9 @@ func TestMPRISSessionPublishesStateAndForwardsCommands(t *testing.T) {
 	}
 	state.Position = 13 * time.Second
 	state.SeekVersion++
-	linux.Update(state)
+	if err := linux.Update(state); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case signal := <-signals:
 		var position int64
@@ -181,7 +183,9 @@ func TestMPRISSessionPublishesStateAndForwardsCommands(t *testing.T) {
 	}
 	for _, volume := range []float64{0.2, 0.9, 0.83} {
 		state.Volume = volume
-		linux.Update(state)
+		if err := linux.Update(state); err != nil {
+			t.Fatal(err)
+		}
 	}
 	select {
 	case signal := <-signals:

@@ -586,10 +586,8 @@ func TestStreamFailedTellsAReadFailureFromACleanEnd(t *testing.T) {
 	if err := os.WriteFile(failing, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	p := New(WithFFmpeg(failing))
-	if _, err := p.audio.context(); err != nil {
-		t.Skipf("no audio device: %v", err)
-	}
+	p := New(WithFFmpeg(failing), WithSilentAudio())
+	t.Cleanup(p.Stop)
 	if err := p.Play("http://example.invalid/reset"); err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +601,8 @@ func TestStreamFailedTellsAReadFailureFromACleanEnd(t *testing.T) {
 	if err := os.WriteFile(clean, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	p = New(WithFFmpeg(clean))
+	p = New(WithFFmpeg(clean), WithSilentAudio())
+	t.Cleanup(p.Stop)
 	if err := p.Play("http://example.invalid/clean"); err != nil {
 		t.Fatal(err)
 	}

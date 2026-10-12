@@ -213,9 +213,10 @@ func TestAFailedStreamMovesOnToTheNextTrack(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := newTestApp()
-	a.player = player.New(player.WithFFmpeg(script))
+	a.player = player.New(player.WithFFmpeg(script), player.WithSilentAudio())
+	t.Cleanup(a.player.Stop)
 	if err := a.player.Play("http://example.invalid/reset"); err != nil {
-		t.Skipf("no audio device: %v", err)
+		t.Fatal(err)
 	}
 	current := youtube.MusicItem{VideoID: "a", Title: "A"}
 	a.current = current

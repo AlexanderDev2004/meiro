@@ -10,6 +10,9 @@ GO_ARCHIVE="$GO_ARCHIVE_DIR/go${GO_VERSION}.linux-$(uname -m).tar.gz"
 JUST_VERSION="1.58.0"
 JUST_ROOT="$HOME/.local/share/just/$JUST_VERSION"
 JUST_ARCHIVE_DIR="$GO_ARCHIVE_DIR"
+# The version CI lints with, so a local run reports what CI will.
+GOLANGCI_VERSION="2.14.0"
+GOLANGCI_ROOT="$HOME/.local/share/golangci-lint/$GOLANGCI_VERSION"
 
 log() {
 	printf '[meiro setup] %s %s\n' "$(date --iso-8601=seconds)" "$*"
@@ -35,12 +38,14 @@ case "$(uname -m)" in
 		GO_PLATFORM="amd64"
 		JUST_PLATFORM="x86_64"
 		JUST_SHA256="4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d"
+		GOLANGCI_SHA256="ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab"
 		;;
 	aarch64 | arm64)
 		GO_SHA256="3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec"
 		GO_PLATFORM="arm64"
 		JUST_PLATFORM="aarch64"
 		JUST_SHA256="748237128c4c40cbdabc65e841d05ceba13cc23a91eaba395495894c1d9764df"
+		GOLANGCI_SHA256="ee7ec5f3453d15ddf106fae5a4d6c71737712348a979d1fe9cd52ec7ea299bae"
 		;;
 	*)
 		printf 'Unsupported Go architecture: %s\n' "$(uname -m)" >&2
@@ -86,6 +91,26 @@ if [[ ! -x "$JUST_ROOT/just" ]] || [[ "$("$JUST_ROOT/just" --version 2>/dev/null
 	chmod 0755 "$JUST_ROOT/just"
 fi
 ln -sfn "$JUST_ROOT/just" "$HOME/.local/bin/just"
+
+GOLANGCI_ARCHIVE_DIR="$GO_ARCHIVE_DIR"
+GOLANGCI_PLATFORM="$GO_PLATFORM"
+GOLANGCI_ARCHIVE="$GOLANGCI_ARCHIVE_DIR/golangci-lint-${GOLANGCI_VERSION}-linux-${GOLANGCI_PLATFORM}.tar.gz"
+if [[ ! -x "$GOLANGCI_ROOT/golangci-lint" ]] || [[ "$("$GOLANGCI_ROOT/golangci-lint" --version 2>/dev/null || true)" != *"$GOLANGCI_VERSION"* ]]; then
+	log "Installing golangci-lint ${GOLANGCI_VERSION}"
+	if [[ ! -f "$GOLANGCI_ARCHIVE" ]] || [[ "$(sha256sum "$GOLANGCI_ARCHIVE" | cut -d ' ' -f 1)" != "$GOLANGCI_SHA256" ]]; then
+		curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_VERSION}/golangci-lint-${GOLANGCI_VERSION}-linux-${GOLANGCI_PLATFORM}.tar.gz" -o "$GOLANGCI_ARCHIVE"
+	fi
+	echo "$GOLANGCI_SHA256  $GOLANGCI_ARCHIVE" | sha256sum --check --status || {
+		rm -f "$GOLANGCI_ARCHIVE"
+		printf 'golangci-lint archive checksum verification failed.\n' >&2
+		exit 1
+	}
+	mkdir -p "$GOLANGCI_ROOT"
+	tar -xzf "$GOLANGCI_ARCHIVE" -C "$GOLANGCI_ROOT" --strip-components=1 \
+		"golangci-lint-${GOLANGCI_VERSION}-linux-${GOLANGCI_PLATFORM}/golangci-lint"
+	chmod 0755 "$GOLANGCI_ROOT/golangci-lint"
+fi
+ln -sfn "$GOLANGCI_ROOT/golangci-lint" "$HOME/.local/bin/golangci-lint"
 
 PROFILE="$HOME/.bash_profile"
 PROFILE_MARKER='# meiro Go and just toolchains'

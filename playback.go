@@ -20,9 +20,12 @@ type playback struct {
 	current youtube.MusicItem
 	queue   queue
 	// total is the current track's length, once known.
-	total       time.Duration
-	scrub       float64
-	scrubbing   bool
+	total     time.Duration
+	scrub     float64
+	scrubbing bool
+	// seekTarget is the position the user last asked for, which seeking moves
+	// the player to off the main thread.
+	seekTarget  time.Duration
 	seekVersion uint64
 	volume      float64
 	muted       float64 // the volume to return to, while muted
@@ -34,6 +37,9 @@ type playback struct {
 	// track is chosen until its audio is found.
 	stream  task
 	streams *audio.URLs
+	// seeking moves the player to seekTarget; it is busy while the decode is
+	// being restarted there.
+	seeking task
 	upNext  upNextState
 	// opening is the album or playlist whose songs are being read to play
 	// it, so that a second press does not read them again.
@@ -154,7 +160,13 @@ func (a *app) start(item youtube.MusicItem) {
 	a.current = item
 	a.total = parseDuration(item.Duration)
 	a.scrub, a.playErr = 0, ""
-	a.player.Stop()
+	// A position in the track that is ending is not one for the next one, and
+	// the decode the seek was moving is about to be replaced.
+	a.seeking.stop()
+	a.seekTarget = 0
+	// The old stream is stopped by the work that finds the new one: stopping
+	// kills ffmpeg and waits for the audio device, which is not for the main
+	// thread to do.
 	a.streamAudio(item)
 	a.ensureUpNext()
 	a.loadPanel()
@@ -176,6 +188,8 @@ type resolvedAudio struct {
 	url       string
 	total     time.Duration
 	fromCache bool
+	// playErr is why the player could not open the audio, once found.
+	playErr error
 }
 
 // streamAudio finds a track's audio off the main thread, in the cache or
@@ -184,25 +198,15 @@ func (a *app) streamAudio(item youtube.MusicItem) {
 	cookie, cache := a.account.cookie(), a.currentAudioCache()
 	log.Printf("playback: resolving video_id=%s signed_in=%t", item.VideoID, cookie != "")
 	startTask(a, &a.stream, audio.ResolveTimeout, func(ctx context.Context) (resolvedAudio, error) {
-		found := resolvedAudio{total: parseDuration(item.Duration)}
-		if path, ok := cache.Get(item.VideoID); ok {
-			log.Printf("playback: audio cache hit video_id=%s", item.VideoID)
-			found.url, found.fromCache = path, true
-			if found.total <= 0 {
-				// A track cached ahead of time was never resolved, so its
-				// length is written nowhere but the file itself.
-				probe, cancel := context.WithTimeout(ctx, 15*time.Second)
-				defer cancel()
-				found.total = audio.Probe(probe, path)
-			}
-			return found, nil
+		a.player.Stop()
+		found, err := a.findAudio(ctx, item, cookie, cache)
+		if err != nil || ctx.Err() != nil {
+			return found, err
 		}
-		url, total, err := a.streams.Get(ctx, item.VideoID, cookie)
-		found.url = url
-		if total > 0 {
-			found.total = total
-		}
-		return found, err
+		// Opening the audio device and starting ffmpeg take long enough to
+		// be felt, so they happen here and not on the main thread.
+		found.playErr = a.player.Play(found.url)
+		return found, nil
 	}, func(found resolvedAudio, err error) {
 		if err != nil {
 			log.Printf("playback: audio resolution failed video_id=%s: %v", item.VideoID, err)
@@ -213,9 +217,9 @@ func (a *app) streamAudio(item youtube.MusicItem) {
 		if found.total > 0 {
 			a.total = found.total
 		}
-		if err := a.player.Play(found.url); err != nil {
-			log.Printf("playback: player could not open video_id=%s: %v", item.VideoID, err)
-			a.playErr = err.Error()
+		if found.playErr != nil {
+			log.Printf("playback: player could not open video_id=%s: %v", item.VideoID, found.playErr)
+			a.playErr = found.playErr.Error()
 			a.syncSystemMedia()
 			return
 		}
@@ -228,6 +232,29 @@ func (a *app) streamAudio(item youtube.MusicItem) {
 		a.warmNext()
 		a.syncSystemMedia()
 	})
+}
+
+// findAudio is where a track's audio is: in the cache, or from yt-dlp.
+func (a *app) findAudio(ctx context.Context, item youtube.MusicItem, cookie string, cache *audio.Cache) (resolvedAudio, error) {
+	found := resolvedAudio{total: parseDuration(item.Duration)}
+	if path, ok := cache.Get(item.VideoID); ok {
+		log.Printf("playback: audio cache hit video_id=%s", item.VideoID)
+		found.url, found.fromCache = path, true
+		if found.total <= 0 {
+			// A track cached ahead of time was never resolved, so its
+			// length is written nowhere but the file itself.
+			probe, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			found.total = audio.Probe(probe, path)
+		}
+		return found, nil
+	}
+	url, total, err := a.streams.Get(ctx, item.VideoID, cookie)
+	found.url = url
+	if total > 0 {
+		found.total = total
+	}
+	return found, err
 }
 
 // warmNext resolves the next track's audio URL while the current one plays,
@@ -549,10 +576,32 @@ func (a *app) previous() {
 
 // seek moves the track to a position. seekVersion tells the system's media
 // controls an explicit change of position from playback moving on.
+//
+// Moving the player there restarts the decode: it kills ffmpeg and waits for
+// the audio device, which is not for the main thread to do. One seek is on its
+// way at a time, and a position asked for while one is on its way is the one
+// the next, and last, seek applies.
 func (a *app) seek(position time.Duration) {
-	a.player.Seek(position)
-	a.seekVersion++
-	a.syncSystemMedia()
+	a.seekTarget = position
+	if !a.seeking.busy() {
+		a.applySeek()
+	}
+}
+
+// applySeek moves the player to the position asked for, then to a newer one
+// that landed while this was on its way.
+func (a *app) applySeek() {
+	at := a.seekTarget
+	startTask(a, &a.seeking, noTimeout, func(context.Context) (time.Duration, error) {
+		a.player.Seek(at)
+		return at, nil
+	}, func(applied time.Duration, _ error) {
+		a.seekVersion++
+		a.syncSystemMedia()
+		if a.seekTarget != applied {
+			a.applySeek()
+		}
+	})
 }
 
 // togglePlay pauses a playing track, resumes a paused one, and starts the

@@ -33,7 +33,12 @@ var panelTabs = [...]struct {
 // nowPlayingState is the full-screen player, and what its side panel shows.
 type nowPlayingState struct {
 	open bool
-	tab  panelTab
+	// closing is set while the player sinks away, before open is cleared.
+	closing bool
+	tab     panelTab
+	// barShown and playerShown say the bar and the player have been built, so
+	// a rise starts on their first frame only.
+	barShown, playerShown bool
 	// queueOnly shows the side panel alone, in a window too narrow for both.
 	queueOnly bool
 	queueList ui.ListState
@@ -64,7 +69,8 @@ type relatedState struct {
 
 // openPlayer opens the full-screen player on a tab.
 func (a *app) openPlayer(tab panelTab, queueOnly bool) {
-	a.nowPlaying.open, a.nowPlaying.tab, a.nowPlaying.queueOnly = true, tab, queueOnly
+	a.nowPlaying.open, a.nowPlaying.closing = true, false
+	a.nowPlaying.tab, a.nowPlaying.queueOnly = tab, queueOnly
 	a.loadPanel()
 }
 
@@ -254,20 +260,27 @@ func (a *app) trackLine(c *ui.Context, title, subtitle m3.Role) ui.Element {
 	})
 }
 
+// riseDistance is how far below its place the player starts, and ends.
+const riseDistance = 80
+
 // playerBar is the floating player: what plays on the left, the transport and
 // the scrubber in the middle, volume and the full-screen player on the right.
 func (a *app) playerBar(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	w, _ := c.Size()
 	wide := w > 1180
-	bar := ui.Row(c).Key("player").Absolute().Left(playerGutter).Right(playerGutter).Bottom(playerGutter).
+	bar := ui.Row(c).Key("player").Absolute().Left(playerGutter).Right(playerGutter).
 		Height(playerHeight).Padding(10, 20, 10, 12).Gap(16).AlignItems(ui.Center).
 		Radius(m3.ExtraLarge).Background(sc.SurfaceContainerHigh)
 	m3.Elevation(c, bar, 3)
 	slide := m3.Move(m3.SpatialDefault)
-	slide.Enter = &ui.Motion{Y: 48}
-	slide.Position = true
+	// It fades in and rises by moving its layout, not by a transform: a
+	// transform anywhere in a frame sends every rounded artwork's clip to
+	// the CPU. The same goes for every motion in this app.
+	slide.Enter = &ui.Motion{}
 	bar.Transition(slide)
+	bar.Bottom(playerGutter - m3.Rise(bar, "rise", 48, 0, !a.nowPlaying.barShown, m3.SpatialDefault))
+	a.nowPlaying.barShown = true
 	bar.Children(func() {
 		info := ui.ButtonBase(c.Key("player-info"))
 		info.Grow(1).Basis(0).MinWidth(0).Gap(14).AlignItems(ui.Center).Radius(m3.Large).Padding(0, 8, 0, 0).
@@ -282,7 +295,7 @@ func (a *app) playerBar(c *ui.Context) {
 			a.trackLine(c, m3.TitleSmall, m3.BodySmall).Grow(1)
 		})
 		if info.Clicked() {
-			a.nowPlaying.open = true
+			a.nowPlaying.open, a.nowPlaying.closing = true, false
 			a.loadPanel()
 		}
 
@@ -311,16 +324,28 @@ func (a *app) nowPlayingView(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	w, h := c.Size()
 	wide := w > 1040
-	panel := ui.Column(c).Key("now-playing").Absolute().Top(0).Left(0).Right(0).Bottom(0).
+	panel := ui.Column(c).Key("now-playing").Absolute().Left(0).Right(0).
 		Background(sc.Surface).Radius(m3.ExtraLarge).Clip()
 	rise := m3.Move(m3.SpatialDefault)
-	rise.Enter, rise.Exit = &ui.Motion{Y: 80, Scale: 0.96}, &ui.Motion{Y: 80, Scale: 0.96}
-	rise.Position = true
+	rise.Enter = &ui.Motion{}
 	panel.Transition(rise)
+	// Closing keeps the player built while it sinks and fades, and only then
+	// takes it away; an exit transition would fade it where it stood.
+	away := float32(0)
+	if a.nowPlaying.closing {
+		away = riseDistance
+	}
+	lift := m3.Rise(panel, "rise", riseDistance, away, !a.nowPlaying.playerShown, m3.SpatialDefault)
+	panel.Top(lift).Bottom(-lift).Opacity(1 - min(max(lift/riseDistance, 0), 1))
+	a.nowPlaying.playerShown = true
+	if a.nowPlaying.closing && lift >= riseDistance-0.5 {
+		a.nowPlaying.open, a.nowPlaying.closing = false, false
+		c.Invalidate()
+	}
 	panel.Children(func() {
 		ui.Row(c).Height(76).PaddingX(pageGutter - 8).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 			if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconExpandMore, Label: "Close the player", Key: "np-close"}).Clicked() {
-				a.nowPlaying.open = false
+				a.nowPlaying.closing = true
 			}
 			m3.EmphasizedText(c, m3.TitleMedium, "Now playing").TextColor(sc.OnSurfaceVariant).Grow(1)
 			if !wide {

@@ -111,7 +111,7 @@ func (a *app) onNavigate() {
 	}
 	a.pageLoad.stop()
 	a.pageMore.stop()
-	a.nowPlaying.open = false
+	a.nowPlaying.open, a.nowPlaying.closing = false, false
 	location := a.router.Location()
 	r, id := a.route()
 	if r.open != nil {

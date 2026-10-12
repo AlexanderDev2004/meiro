@@ -65,7 +65,7 @@ func (a *app) shortcuts(c *ui.Context) {
 		a.navigate(routeSettings)
 	}
 	if a.nowPlaying.open && c.Shortcut(0, ui.KeyEscape) {
-		a.nowPlaying.open = false
+		a.nowPlaying.closing = true
 	}
 }
 
@@ -156,15 +156,19 @@ func (a *app) sheet(c *ui.Context) {
 			// were laid out and painted in full on every frame of the wave
 			// and of the slide into the player, which is most of the frame,
 			// to be covered at once.
+			a.nowPlaying.barShown = false
 			a.nowPlayingView(c)
 			return
 		}
+		a.nowPlaying.playerShown = false
 		a.topBar(c)
 		ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 			a.routerView(c)
 		})
 		if a.current.VideoID != "" {
 			a.playerBar(c)
+		} else {
+			a.nowPlaying.barShown = false
 		}
 	})
 }

@@ -303,6 +303,58 @@ func TestPlayingATrackThroughToTheEnd(t *testing.T) {
 	}
 }
 
+// deferredRunner replaces the app's background runner with a queue the test
+// drains by hand, so the work the app hands off can be held in flight while
+// the test asks what the main thread did with it.
+func deferredRunner(a *app) (drain func()) {
+	var pending []func()
+	a.run = func(work func()) { pending = append(pending, work) }
+	return func() {
+		queued := len(pending)
+		for i := range queued {
+			pending[i]()
+		}
+		pending = pending[queued:]
+	}
+}
+
+// Moving the player to a position restarts ffmpeg there and waits for the
+// audio device, so it happens off the main thread, and a position asked for
+// while one is on its way is the one that plays.
+func TestSeekingMovesThePlayerOffTheMainThread(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	tone := filepath.Join(t.TempDir(), "tone.wav")
+	if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=duration=15", tone).CombinedOutput(); err != nil {
+		t.Fatalf("making a tone: %v: %s", err, out)
+	}
+	a, r := playbackApp(t)
+	r.file = tone
+	drain := deferredRunner(a)
+	q := tracks("a", "b")
+	a.play(q[0], q)
+	drain()
+	if !a.player.Active() {
+		t.Fatal("the track never reached the player")
+	}
+
+	a.seek(3 * time.Second)
+	if got := a.player.Position(); got > 2*time.Second {
+		t.Fatalf("the player moved to %v on the main thread, want the seek queued", got)
+	}
+	a.seek(9 * time.Second) // asked for while the first seek is on its way
+	drain()
+	if got := a.player.Position(); got < 2*time.Second || got >= 8*time.Second {
+		t.Fatalf("position after the first seek = %v, want about 3s", got)
+	}
+	drain() // the position asked for second, which replaces the first
+	if got := a.player.Position(); got < 8*time.Second {
+		t.Fatalf("position after the second seek = %v, want about 9s", got)
+	}
+}
+
 // A track the audio cache holds plays from the cache, without asking the
 // resolver.
 func TestACachedTrackPlaysWithoutResolving(t *testing.T) {

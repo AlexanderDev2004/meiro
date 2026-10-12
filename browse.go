@@ -294,8 +294,11 @@ func (a *app) card(c *ui.Context, item youtube.MusicItem, queue []youtube.MusicI
 			if hovered && (kind == youtube.TargetTrack || kind == youtube.TargetAlbum || kind == youtube.TargetPlaylist) {
 				fab := m3.FAB(c, m3.FABSpec{Icon: m3.IconPlay, Size: m3.FABSmall, Tone: m3.FABPrimary, Key: "play"}).
 					Attach(ui.AnchorBottomRight, ui.AnchorBottomRight).Right(8).Bottom(8)
+				// Fade only: a transform anywhere in a frame makes the toolkit draw
+				// a clip mask on the CPU for every rounded artwork in view, which
+				// made hovering a card lag.
 				enter := m3.Move(m3.SpatialFast)
-				enter.Enter = &ui.Motion{Y: 8, Scale: 0.85}
+				enter.Enter = &ui.Motion{}
 				fab.Transition(enter)
 				if fab.Clicked() {
 					played = true

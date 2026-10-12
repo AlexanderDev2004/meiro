@@ -318,7 +318,9 @@ func (a *app) card(c *ui.Context, item youtube.MusicItem, queue []youtube.MusicI
 			if hovered && (kind == pageTrack || kind == pageAlbum || kind == pagePlaylist) {
 				fab := m3.FAB(c, m3.FABSpec{Icon: m3.IconPlay, Size: m3.FABSmall, Tone: m3.FABPrimary, Key: "play"}).
 					Attach(ui.AnchorBottomRight, ui.AnchorBottomRight).Right(8).Bottom(8)
-				fab.Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 8}, Duration: m3.SpatialFast.Duration(), Ease: m3.SpatialFast.Ease()})
+				enter := m3.Move(m3.SpatialFast)
+				enter.Enter = &ui.Motion{Y: 8, Scale: 0.85}
+				fab.Transition(enter)
 				if fab.Clicked() {
 					played = true
 				}

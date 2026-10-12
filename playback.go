@@ -85,6 +85,7 @@ func (a *app) playAll() {
 
 // start makes item the current track and resolves its audio.
 func (a *app) start(item youtube.MusicItem) {
+	changed := a.current.VideoID != item.VideoID
 	a.current = item
 	a.total = parseDuration(item.Duration)
 	a.scrub, a.playErr = 0, ""
@@ -92,6 +93,10 @@ func (a *app) start(item youtube.MusicItem) {
 	a.stream(item)
 	a.ensureUpNext()
 	a.loadPanel()
+	if changed {
+		a.recordHistory(item)
+		a.trackNotification(item)
+	}
 	a.syncSystemMedia()
 }
 

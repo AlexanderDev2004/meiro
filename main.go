@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/elianiva/meiro/m3"
@@ -202,6 +203,17 @@ type app struct {
 	// to play, so that a second press does not look it up again.
 	opening string
 
+	// Desktop integrations. awakeRelease drops the sleep assertion; tray is
+	// the menu-bar icon while it shows; suspendedWhilePlaying remembers a
+	// pause the system sleep caused, to undo on wake.
+	awakeRelease          func()
+	tray                  *mygo.Tray
+	suspendedWhilePlaying bool
+	historyPath           string
+	history               []historyEntry
+	historyLoaded         bool
+	statsRange            int // days the stats page covers: 7, 14 or 30
+
 	// job numbers page loads, so a slow one for a page the user has left
 	// is dropped when it lands.
 	job    int
@@ -270,6 +282,14 @@ func main() {
 	// megabytes.
 	debug.SetGCPercent(50)
 	sweepTempRoot()
+	// A second launch hands its work to the running app instead of starting
+	// another player with its own audio.
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	// Signed auto-updates with the updater's native window: in builds made
+	// without update signing it stays idle and says so when asked.
+	mygo.Use(native.Plugin)
 	a := newApp()
 	mygo.App.WhenReady(func() {
 		a.setup()
@@ -290,6 +310,7 @@ func main() {
 			a.systemMedia = session
 			a.syncSystemMedia()
 		}
+		a.setupDesktop()
 		// Background work reaches the window through a.win, so it starts only
 		// once the window is there.
 		a.restoreAccount()
@@ -306,8 +327,19 @@ func main() {
 }
 
 // shutdown flushes settings before closing resources that belong to the app.
+// The desktop integrations only run with a window: tests shut the app down
+// without ever starting one, where asking the system anything would wait for
+// an event loop that does not run.
 func (a *app) shutdown() {
 	a.saver.wait()
+	if a.win != nil {
+		a.releaseAwake()
+		mygo.GlobalShortcut.UnregisterAll()
+		if a.tray != nil {
+			a.tray.Destroy()
+			a.tray = nil
+		}
+	}
 	if a.systemMedia != nil {
 		if closeErr := a.systemMedia.Close(); closeErr != nil {
 			log.Printf("close system media controls: %v", closeErr)
@@ -566,8 +598,12 @@ func (a *app) systemMediaControls() systemmedia.Controls {
 }
 
 // syncSystemMedia publishes a snapshot of app-owned playback state. The
-// platform adapters throttle position updates to avoid flooding the OS.
+// platform adapters throttle position updates to avoid flooding the OS. It
+// also lines up the sleep assertion and the tray with the player's state,
+// so every path that changes playback keeps them right through this one.
 func (a *app) syncSystemMedia() {
+	a.syncAwake()
+	a.syncTrayMedia()
 	if a.systemMedia == nil {
 		return
 	}

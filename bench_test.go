@@ -187,3 +187,39 @@ func BenchmarkStatsSummary(b *testing.B) {
 		a.statsSummary(now, 30)
 	}
 }
+
+// benchLibraryApp is the library page: one section of n album cards, which the
+// page lays out as a wrapping grid.
+func benchLibraryApp(n int) (*app, *int) {
+	a := newTestApp()
+	a.router.Push("/library")
+	a.location = "/library"
+	a.signedIn = true
+	items := make([]youtube.MusicItem, n)
+	for i := range items {
+		items[i] = benchAlbum(i)
+	}
+	a.feed = pageState{sections: []youtube.MusicSection{{Title: "Albums", Items: items}}}
+	art := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 8, 8)))
+	asked := new(int)
+	a.thumbs.synth = func(string, int) *ui.Bitmap { *asked++; return art }
+	return a, asked
+}
+
+// BenchmarkLibraryFrame measures a frame of the library page. Only the cards
+// in view should be built, so the frame should stay flat as the library grows.
+func BenchmarkLibraryFrame(b *testing.B) {
+	for _, n := range []int{50, 500, 2000} {
+		b.Run(fmt.Sprintf("cards=%d", n), func(b *testing.B) {
+			a, asked := benchLibraryApp(n)
+			tt := ui.NewTester(a.view, 1000, 700)
+			*asked = 0
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				tt.Frame()
+			}
+			b.ReportMetric(float64(*asked)/float64(b.N), "art-asks/frame")
+		})
+	}
+}

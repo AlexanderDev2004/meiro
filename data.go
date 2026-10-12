@@ -80,7 +80,7 @@ const (
 	rowHeading                // the name of a section, with arrows for its shelf
 	rowCards                  // a shelf of cards that scrolls sideways
 	rowColumns                // a shelf of songs in columns that scrolls sideways
-	rowGrid                   // cards that wrap into a grid across the page
+	rowGrid                   // one line of cards in a grid that wraps across the page
 	rowTrack                  // one song, album, artist or playlist in a column of rows
 	rowMore                   // the button that loads the next page
 	rowLoading                // the page is loading
@@ -111,7 +111,9 @@ func (r row) key() any {
 	switch r.kind {
 	case rowTrack:
 		return itemKey("track", r.item) + "\x00" + r.shelf + "#" + strconv.Itoa(r.position)
-	case rowCards, rowColumns, rowGrid, rowHeading:
+	case rowGrid:
+		return strconv.Itoa(int(r.kind)) + ":" + r.shelf + "#" + strconv.Itoa(r.position)
+	case rowCards, rowColumns, rowHeading:
 		return strconv.Itoa(int(r.kind)) + ":" + r.shelf
 	}
 	return strconv.Itoa(int(r.kind)) + ":" + r.title
@@ -432,6 +434,9 @@ type rowsKey struct {
 	// loose is how many items a page without sections holds.
 	shelves uint64
 	loose   int
+	// columns is how many cards a line of the library's grid holds; it
+	// is zero on a page without one.
+	columns int
 }
 
 // rowsKeyOf describes the page the rows are built from.
@@ -441,6 +446,7 @@ func (a *app) rowsKeyOf() rowsKey {
 		path: a.router.Path(), detail: a.detail,
 		loading: s.loading, err: s.err, more: s.more, moreErr: s.moreErr,
 		shelves: shelfShape(s.sections), loose: len(s.items),
+		columns: a.gridColumnsOn(a.router.Path()),
 	}
 }
 
@@ -548,6 +554,18 @@ func (a *app) setRows() {
 			if path == "/library" && !placed && (kind == rowGrid || kind == rowCards) {
 				items = append([]youtube.MusicItem{newPlaylistItem}, items...)
 				placed = true
+			}
+			if kind == rowGrid {
+				// A grid is laid out a line to a row, so the list builds only
+				// the lines in view. Building the whole grid as one row put
+				// every card of a library, and a request for its artwork, in
+				// every frame.
+				perLine := a.gridColumns()
+				for start := 0; start < len(items); start += perLine {
+					line := items[start:min(start+perLine, len(items))]
+					a.rows = append(a.rows, row{kind: rowGrid, shelf: shelf, items: line, queue: queue, track: -1, position: start})
+				}
+				continue
 			}
 			a.rows = append(a.rows, row{kind: kind, shelf: shelf, items: items, queue: queue, track: -1})
 		}

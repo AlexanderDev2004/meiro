@@ -72,9 +72,15 @@ func (a *app) pageList(c *ui.Context) {
 		}
 		return a.rows[i].title
 	}
-	ui.List(c, &a.list, len(a.rows), func(i int) {
+	list := ui.List(c, &a.list, len(a.rows), func(i int) {
 		a.rowView(c, i)
 	}).Grow(1).Padding(0, 0, a.clearance())
+	// The grid's lines depend on the width, which is known only once the list
+	// has been laid out: plan the lines again when it turns out different.
+	a.listWidth = list.Bounds().W
+	if a.gridColumnsOn(a.router.Path()) != a.rowsKey.columns {
+		c.Invalidate()
+	}
 }
 
 // rowView builds one row of the page.
@@ -187,12 +193,36 @@ func (a *app) cardShelf(c *ui.Context, r row) {
 	}
 }
 
-// cardGrid is cards that wrap onto as many lines as the page is wide, so the
-// whole of it is in view without scrolling sideways.
+// cardGap is the space between the cards of a shelf or grid.
+const cardGap = 4
+
+// gridColumns is how many cards fit across a line of the page's grid, given
+// the width the list had in the last frame: a line is as many cards as the
+// page is wide.
+func (a *app) gridColumns() int {
+	width := a.listWidth
+	if width <= 0 {
+		width = 1000
+	}
+	inner := width - 2*(pageGutter-8)
+	return max(1, int((inner+cardGap)/(cardWidth+cardGap)))
+}
+
+// gridColumnsOn is gridColumns for a page that has a grid, and zero for the
+// pages that have none.
+func (a *app) gridColumnsOn(path string) int {
+	if path != "/library" {
+		return 0
+	}
+	return a.gridColumns()
+}
+
+// cardGrid is one line of cards of a grid, which wraps onto as many lines as
+// the page is wide, so the whole of it is in view without scrolling sideways.
 func (a *app) cardGrid(c *ui.Context, r row) {
-	ui.Row(c).Wrap().Gap(4).Padding(0, pageGutter-8, 0).Children(func() {
+	ui.Row(c).Gap(cardGap).Padding(0, pageGutter-8, cardGap).Children(func() {
 		for i, item := range r.items {
-			a.card(c, item, r.queue, r.shelf, i, true)
+			a.card(c, item, r.queue, r.shelf, r.position+i, true)
 		}
 	})
 }

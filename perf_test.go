@@ -148,3 +148,36 @@ func TestIdlePageBuildsOncePerFrame(t *testing.T) {
 		}
 	}
 }
+
+// The library's grid is laid out a line to a row, so the list builds only the
+// lines in view, and the lines hold every card once, in order.
+func TestLibraryGridBuildsOnlyVisibleLines(t *testing.T) {
+	a, asked := benchLibraryApp(400)
+	tt := ui.NewTester(a.view, 1000, 700)
+	*asked = 0
+	tt.Frame()
+	if *asked >= 80 {
+		t.Fatalf("asked for the artwork of %d of 400 cards in a frame; only the cards in view should be", *asked)
+	}
+	columns := a.gridColumns()
+	// The line holds as many cards as fit the list's width, and one more would not.
+	inner := a.listWidth - 2*(pageGutter-8)
+	if fits := float32(columns)*(cardWidth+cardGap) - cardGap; a.listWidth <= 0 || fits > inner || fits+cardWidth+cardGap <= inner {
+		t.Fatalf("%d columns for a list %v wide", columns, a.listWidth)
+	}
+	next, lines := 0, 0
+	for _, r := range a.rows {
+		if r.kind != rowGrid {
+			continue
+		}
+		lines++
+		if len(r.items) > columns || r.position != next {
+			t.Fatalf("line %d holds %d cards from %d, want at most %d from %d", lines, len(r.items), r.position, columns, next)
+		}
+		next += len(r.items)
+	}
+	// The library leads with its make-a-playlist tile, then the 400 albums.
+	if next != 401 {
+		t.Fatalf("the lines hold %d cards, want 401", next)
+	}
+}

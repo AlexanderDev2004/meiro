@@ -3,6 +3,16 @@
 A native desktop player for YouTube Music. Meiro draws its own interface in a
 native window instead of using a Chromium-based web front end.
 
+## Where the name comes from
+
+Meiro is built with the [MyGO](https://github.com/egoist/mygo) framework, and
+its name comes from one of MyGO!!!!!'s songs,
+[迷路日々](https://www.youtube.com/watch?v=STgVa-reZkM). The title is written
+with the characters for *meiro* (迷路, "maze") and *hibi* (日々, "days"), so it
+reads as "maze days" or "meiro days". But the song is pronounced "Melody"
+(メロディ), a pun on the English word. The app is named Meiro after the first
+half of the title.
+
 ## Features
 
 - **Browse.** View your Home feed and Explore, then open artist, album, and

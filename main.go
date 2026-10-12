@@ -220,6 +220,7 @@ type app struct {
 	statsRange            int // days the stats page covers: 7, 14 or 30
 	stats                 statsMemo
 	listWidth             float32 // width the page's list had in the last frame
+	knownPlaylists        knownPlaylists
 
 	// job numbers page loads, so a slow one for a page the user has left
 	// is dropped when it lands.

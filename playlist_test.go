@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -408,5 +409,82 @@ func TestThePickerWithNoPlaylistsOffersToMakeOne(t *testing.T) {
 	}
 	if !tt.HasText("New playlist") {
 		t.Errorf("the picker does not offer to make a playlist: %q", tt.Texts())
+	}
+}
+
+// pagedLibrary answers the library landing page with one shelf that has a page
+// after it, and calls onMore when that next page is asked for.
+type pagedLibrary struct{ onMore func() }
+
+func (p pagedLibrary) RoundTrip(request *http.Request) (*http.Response, error) {
+	if !strings.HasSuffix(request.URL.Path, "/browse") {
+		return fakeMusic{}.RoundTrip(request)
+	}
+	data, _ := io.ReadAll(request.Body)
+	body := ""
+	switch {
+	case strings.Contains(string(data), "FEmusic_library_landing"):
+		body = `{"contents":{"sectionListRenderer":{"contents":[{"gridRenderer":{"title":{"simpleText":"Playlists"},"items":[{"gridPlaylistRenderer":{"playlistId":"PL1","title":{"runs":[{"text":"First playlist"}]}}}],"continuations":[{"nextContinuationData":{"continuation":"MORE"}}]}}]}}}`
+	case strings.Contains(string(data), "MORE"):
+		p.onMore()
+		body = `{"continuationContents":{"gridContinuation":{"items":[{"gridPlaylistRenderer":{"playlistId":"PL2","title":{"runs":[{"text":"Second playlist"}]}}}]}}}`
+	default:
+		return fakeMusic{}.RoundTrip(request)
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+}
+
+// The library shows its first page as soon as it has it, and keeps loading the
+// rest, rather than showing nothing until every page is in.
+func TestTheLibraryShowsItsFirstPageWhileTheRestLoads(t *testing.T) {
+	var a *app
+	var whileLoading struct {
+		shown   bool
+		partial bool
+		more    string
+	}
+	a = signedInWith(t, pagedLibrary{onMore: func() {
+		whileLoading.shown = len(a.feed.sections) > 0 && len(a.feed.sections[0].Items) == 1
+		whileLoading.partial, whileLoading.more = a.feed.partial, a.feed.more
+	}})
+	a.router.Push("/library")
+	tt := ui.NewTester(a.view, 1000, 700)
+	tt.Frame()
+	if !whileLoading.shown || !whileLoading.partial {
+		t.Errorf("when the next page was asked for the page showed %+v, want the first page, marked as still loading", whileLoading)
+	}
+	if whileLoading.more != "" {
+		t.Errorf("a page still loading offered %q to ask for more", whileLoading.more)
+	}
+	if a.feed.partial || a.feed.loading {
+		t.Errorf("the page is still loading after every page came: %+v", a.feed)
+	}
+	if !tt.HasText("First playlist") || !tt.HasText("Second playlist") {
+		t.Errorf("the library is missing a page: %q", tt.Texts())
+	}
+}
+
+// The picker offers the playlists the library last showed at once, instead of
+// waiting for the whole library to be read again, and then catches up.
+func TestThePickerOpensOnTheKnownPlaylistsAndRefreshesThem(t *testing.T) {
+	a := signedInApp(t)
+	known := []youtube.MusicItem{{ID: "VLold", BrowseID: "VLold", Title: "Old news", Subtitle: "Playlist"}}
+	a.knownPlaylists = knownPlaylists{client: a.client(), items: known}
+	var atOpen []youtube.MusicItem
+	var loadingAtOpen bool
+	a.run = func(work func()) {
+		atOpen, loadingAtOpen = a.addToPlaylist.playlists, a.addToPlaylist.loading
+		work()
+	}
+	a.openAddToPlaylist(youtube.MusicItem{VideoID: "vid-1", Title: "Ambient One"})
+	if len(atOpen) != 1 || atOpen[0].Title != "Old news" || loadingAtOpen {
+		t.Errorf("the picker opened on %v, loading %v, want the known playlists", atOpen, loadingAtOpen)
+	}
+	got := a.addToPlaylist.playlists
+	if len(got) == 0 || got[0].Title == "Old news" {
+		t.Errorf("the picker kept %v, want the library read again", got)
+	}
+	if len(a.knownPlaylists.items) != len(got) {
+		t.Errorf("the known playlists were not refreshed: %v", a.knownPlaylists.items)
 	}
 }

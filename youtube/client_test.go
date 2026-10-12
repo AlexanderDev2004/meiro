@@ -1167,3 +1167,37 @@ func TestDecodeResponseKeepsOrderDuplicatesAndEscapedNames(t *testing.T) {
 		t.Fatal("malformed JSON should decode to nil")
 	}
 }
+
+func TestStreamLibraryReportsWhatHasLoadedAndKeepsEachReportAsItWas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		switch request["continuation"] {
+		case nil:
+			_, _ = w.Write([]byte(`{"contents":{"sectionListRenderer":{"contents":[{"musicShelfRenderer":{"title":{"simpleText":"Songs"},"contents":[{"musicResponsiveListItemRenderer":{"videoId":"a","title":{"simpleText":"A"}}}],"continuations":[{"nextContinuationData":{"continuation":"S1"}}]}}]}}}`))
+		case "S1":
+			_, _ = w.Write([]byte(`{"continuationContents":{"musicShelfContinuation":{"contents":[{"musicResponsiveListItemRenderer":{"videoId":"b","title":{"simpleText":"B"}}}],"continuations":[{"nextContinuationData":{"continuation":"S2"}}]}}}`))
+		case "S2":
+			_, _ = w.Write([]byte(`{"continuationContents":{"musicShelfContinuation":{"contents":[{"musicResponsiveListItemRenderer":{"videoId":"c","title":{"simpleText":"C"}}}]}}}`))
+		}
+	}))
+	defer server.Close()
+	client := NewClient(Options{BaseURL: server.URL, APIKey: "key"})
+	var reports []*BrowseResult
+	library, err := client.StreamLibrary(context.Background(), func(r *BrowseResult) { reports = append(reports, r) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The landing page, then the page after it: the last page is the result itself.
+	if len(reports) != 2 {
+		t.Fatalf("reports = %d, want 2", len(reports))
+	}
+	for i, want := range [][]string{{"a"}, {"a", "b"}} {
+		if got := musicItemIDs(reports[i].Sections[0].Items); !slices.Equal(got, want) {
+			t.Errorf("report %d holds %v, want %v: a later page changed it", i, got, want)
+		}
+	}
+	if got := musicItemIDs(library.Sections[0].Items); !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Errorf("library holds %v", got)
+	}
+}

@@ -174,6 +174,11 @@ func (a *app) openAddToPlaylist(item youtube.MusicItem) {
 	if client == nil {
 		return
 	}
+	// The playlists the library last showed are offered at once, while the
+	// library is read again to catch up with what changed since.
+	if known := a.knownPlaylists; known.client == client && len(known.items) > 0 {
+		a.addToPlaylist.playlists, a.addToPlaylist.loading = known.items, false
+	}
 	a.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
@@ -184,12 +189,23 @@ func (a *app) openAddToPlaylist(item youtube.MusicItem) {
 			}
 			a.addToPlaylist.loading = false
 			if err != nil {
-				a.addToPlaylist.err = err.Error()
+				if len(a.addToPlaylist.playlists) == 0 {
+					a.addToPlaylist.err = err.Error()
+				}
 				return
 			}
 			a.addToPlaylist.playlists = libraryPlaylists(library)
+			a.knownPlaylists = knownPlaylists{client: client, items: a.addToPlaylist.playlists}
 		})
 	})
+}
+
+// knownPlaylists are the playlists a library last held, kept so the picker
+// need not wait for the whole library to be read again. They belong to the
+// client that read them: another account has its own.
+type knownPlaylists struct {
+	client *youtube.Client
+	items  []youtube.MusicItem
 }
 
 // dismissAddToPlaylist drops the choice being made.

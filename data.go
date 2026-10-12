@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"math/rand/v2"
 	"net/url"
 	"strconv"
@@ -53,6 +54,9 @@ type pageState struct {
 	// moreErr is why the last request for more failed. The page keeps what it
 	// has, and the button to ask again.
 	moreErr string
+	// partial says the page shows what has loaded of it so far, and more of
+	// it is still on the way.
+	partial bool
 }
 
 // searchState is the search page. Typing only edits query; a search runs when
@@ -76,16 +80,17 @@ type searchState struct {
 type rowKind int
 
 const (
-	rowHero    rowKind = iota // the heading of an album, playlist or artist
-	rowHeading                // the name of a section, with arrows for its shelf
-	rowCards                  // a shelf of cards that scrolls sideways
-	rowColumns                // a shelf of songs in columns that scrolls sideways
-	rowGrid                   // one line of cards in a grid that wraps across the page
-	rowTrack                  // one song, album, artist or playlist in a column of rows
-	rowMore                   // the button that loads the next page
-	rowLoading                // the page is loading
-	rowError                  // the page failed
-	rowEmpty                  // the page has nothing on it
+	rowHero      rowKind = iota // the heading of an album, playlist or artist
+	rowHeading                  // the name of a section, with arrows for its shelf
+	rowCards                    // a shelf of cards that scrolls sideways
+	rowColumns                  // a shelf of songs in columns that scrolls sideways
+	rowGrid                     // one line of cards in a grid that wraps across the page
+	rowTrack                    // one song, album, artist or playlist in a column of rows
+	rowMore                     // the button that loads the next page
+	rowLoading                  // the page is loading
+	rowError                    // the page failed
+	rowEmpty                    // the page has nothing on it
+	rowStreaming                // the rest of the page is still loading
 )
 
 // row is one line of a page's list.
@@ -214,7 +219,7 @@ func pathArg(path string) string {
 
 // loadFeed fetches one of the pages that need no argument.
 func (a *app) loadFeed(page string) {
-	a.fetch(func(ctx context.Context, client *youtube.Client) (*youtube.BrowseResult, error) {
+	a.fetch(func(ctx context.Context, client *youtube.Client, partial func(*youtube.BrowseResult)) (*youtube.BrowseResult, error) {
 		switch page {
 		case pageHome:
 			return client.GetHomeFeed(ctx)
@@ -223,14 +228,14 @@ func (a *app) loadFeed(page string) {
 		case pageRecap:
 			return client.GetRecap(ctx)
 		default:
-			return client.GetAllLibrary(ctx)
+			return client.StreamLibrary(ctx, partial)
 		}
 	})
 }
 
 // loadDetail fetches an album, a playlist or an artist page.
 func (a *app) loadDetail(kind, id string) {
-	a.fetch(func(ctx context.Context, client *youtube.Client) (*youtube.BrowseResult, error) {
+	a.fetch(func(ctx context.Context, client *youtube.Client, _ func(*youtube.BrowseResult)) (*youtube.BrowseResult, error) {
 		switch kind {
 		case pageAlbum:
 			return client.GetAlbum(ctx, id)
@@ -245,7 +250,7 @@ func (a *app) loadDetail(kind, id string) {
 // fetch runs a page load off the main thread and applies it, dropping the
 // result when a newer load has replaced it. The client is the one in use when
 // the load began, handed to it because the app's own may change meanwhile.
-func (a *app) fetch(load func(ctx context.Context, client *youtube.Client) (*youtube.BrowseResult, error)) {
+func (a *app) fetch(load func(ctx context.Context, client *youtube.Client, partial func(*youtube.BrowseResult)) (*youtube.BrowseResult, error)) {
 	client := a.client()
 	if client == nil {
 		return
@@ -255,40 +260,71 @@ func (a *app) fetch(load func(ctx context.Context, client *youtube.Client) (*you
 	job := a.nextJob()
 	location := a.router.Location()
 	ctx := a.jobContext()
+	// apply shows a result on the page. A partial one is the start of a page
+	// that is still loading: it is shown at once, without the button that asks
+	// for more, since the rest is already on its way.
+	apply := func(result *youtube.BrowseResult, partial bool) {
+		a.rowsDirty = true
+		a.feed.loading, a.feed.partial = false, partial
+		// A page over its own content takes the name and the picture from
+		// what it loaded; what the caller seeded is only what it had at
+		// hand when the page was opened.
+		if a.detail.kind != "" {
+			if result.Title != "" {
+				a.detail.title = result.Title
+			}
+			if result.Thumbnail != "" {
+				a.detail.art = result.Thumbnail
+			}
+			a.details[a.router.Path()] = a.detail
+		}
+		a.feed.sections = result.Sections
+		// Items are the page's songs, cards and rows all together, which
+		// its sections already hold; they are only a page by themselves
+		// when it has no sections.
+		a.feed.items = nil
+		if len(result.Sections) == 0 {
+			a.feed.items = result.Items
+		}
+		a.feed.more = result.ContinuationToken
+		if partial {
+			a.feed.more = ""
+		}
+		a.pageLoadedAt = time.Now()
+		if !partial && a.router.Path() == "/library" {
+			a.knownPlaylists = knownPlaylists{client: client, items: libraryPlaylists(result)}
+		}
+	}
 	a.run(func() {
-		result, err := load(ctx, client)
+		result, err := load(ctx, client, func(partial *youtube.BrowseResult) {
+			a.update(func() {
+				// A page that finished, or was replaced, ignores what was
+				// still on its way.
+				if job != a.job || location != a.router.Location() || !a.feed.loading && !a.feed.partial {
+					return
+				}
+				apply(partial, true)
+			})
+		})
 		a.update(func() {
 			if job != a.job || location != a.router.Location() {
 				return
 			}
+			if err != nil && a.feed.partial && result != nil {
+				// Some of the page is already there: keep it, and say the
+				// rest did not come.
+				log.Printf("loading the rest of %s: %v", location, err)
+				apply(result, false)
+				a.feed.more, a.feed.moreErr = "", ""
+				return
+			}
 			a.rowsDirty = true
-			a.feed.loading = false
+			a.feed.loading, a.feed.partial = false, false
 			if err != nil {
 				a.feed.err = err.Error()
 				return
 			}
-			// A page over its own content takes the name and the picture from
-			// what it loaded; what the caller seeded is only what it had at
-			// hand when the page was opened.
-			if a.detail.kind != "" {
-				if result.Title != "" {
-					a.detail.title = result.Title
-				}
-				if result.Thumbnail != "" {
-					a.detail.art = result.Thumbnail
-				}
-				a.details[a.router.Path()] = a.detail
-			}
-			a.feed.sections = result.Sections
-			// Items are the page's songs, cards and rows all together, which
-			// its sections already hold; they are only a page by themselves
-			// when it has no sections.
-			a.feed.items = nil
-			if len(result.Sections) == 0 {
-				a.feed.items = result.Items
-			}
-			a.feed.more = result.ContinuationToken
-			a.pageLoadedAt = time.Now()
+			apply(result, false)
 		})
 	})
 }
@@ -434,6 +470,7 @@ type rowsKey struct {
 	// loose is how many items a page without sections holds.
 	shelves uint64
 	loose   int
+	partial bool
 	// columns is how many cards a line of the library's grid holds; it
 	// is zero on a page without one.
 	columns int
@@ -444,7 +481,7 @@ func (a *app) rowsKeyOf() rowsKey {
 	s := a.pageState()
 	return rowsKey{
 		path: a.router.Path(), detail: a.detail,
-		loading: s.loading, err: s.err, more: s.more, moreErr: s.moreErr,
+		loading: s.loading, partial: s.partial, err: s.err, more: s.more, moreErr: s.moreErr,
 		shelves: shelfShape(s.sections), loose: len(s.items),
 		columns: a.gridColumnsOn(a.router.Path()),
 	}
@@ -569,6 +606,9 @@ func (a *app) setRows() {
 			}
 			a.rows = append(a.rows, row{kind: kind, shelf: shelf, items: items, queue: queue, track: -1})
 		}
+	}
+	if s.partial {
+		a.rows = append(a.rows, row{kind: rowStreaming, track: -1})
 	}
 	if s.more != "" {
 		title := "Show more"

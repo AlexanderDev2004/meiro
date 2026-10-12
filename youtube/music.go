@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -195,14 +196,39 @@ func (c *Client) GetLibrary(ctx context.Context) (*BrowseResult, error) {
 // library landing page. YouTube may still omit data based on account, region,
 // or subscription access.
 func (c *Client) GetAllLibrary(ctx context.Context) (*BrowseResult, error) {
+	return c.StreamLibrary(ctx, nil)
+}
+
+// StreamLibrary loads the library as GetAllLibrary does, and calls progress
+// with what it has so far: once for the landing page, then after each level
+// of continuation pages. Each call gets a snapshot that the caller may keep
+// and read while the rest loads. The final result is the last snapshot, with
+// the tokens that asked for more cleared; progress is not called again for it.
+func (c *Client) StreamLibrary(ctx context.Context, progress func(*BrowseResult)) (*BrowseResult, error) {
 	result, err := c.GetLibrary(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.drainBrowse(ctx, result, "library"); err != nil {
+	if progress != nil && (result.ContinuationToken != "" || slices.ContainsFunc(result.Sections, func(s MusicSection) bool { return s.ContinuationToken != "" })) {
+		progress(result.snapshot())
+	}
+	if err := c.drainBrowse(ctx, result, "library", progress); err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+// snapshot copies what a later page could still change: the lists of items
+// and sections, though not the items themselves, which only ever grow at their
+// end.
+func (r *BrowseResult) snapshot() *BrowseResult {
+	copied := *r
+	copied.Items = slices.Clip(r.Items)
+	copied.Sections = slices.Clone(r.Sections)
+	for index := range copied.Sections {
+		copied.Sections[index].Items = slices.Clip(copied.Sections[index].Items)
+	}
+	return &copied
 }
 
 // drainConcurrency is how many continuation pages are asked for at once.
@@ -216,7 +242,7 @@ const drainConcurrency = 4
 // a walk that asked for one page after another would give. A library's shelves
 // each have their own chain of pages, and asking for them one by one made the
 // page wait for every round trip in turn.
-func (c *Client) drainBrowse(ctx context.Context, result *BrowseResult, label string) error {
+func (c *Client) drainBrowse(ctx context.Context, result *BrowseResult, label string, progress func(*BrowseResult)) error {
 	queue := browseContinuationQueue(result)
 	seen := make(map[string]struct{})
 	for len(queue) > 0 {
@@ -262,6 +288,9 @@ func (c *Client) drainBrowse(ctx context.Context, result *BrowseResult, label st
 		}
 		if exceeded {
 			return fmt.Errorf("youtube: %s exceeded 1000 continuation pages", label)
+		}
+		if progress != nil && len(queue) > 0 {
+			progress(result.snapshot())
 		}
 	}
 	result.ContinuationToken = ""
@@ -349,7 +378,7 @@ func (c *Client) GetAllPlaylist(ctx context.Context, playlistID string) (*Browse
 	if err != nil {
 		return nil, err
 	}
-	if err := c.drainBrowse(ctx, result, "playlist"); err != nil {
+	if err := c.drainBrowse(ctx, result, "playlist", nil); err != nil {
 		return result, err
 	}
 	return result, nil

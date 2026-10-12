@@ -25,7 +25,7 @@ type cachedPage struct {
 }
 
 func (p cachedPage) fresh(now time.Time) bool {
-	return !p.loadedAt.IsZero() && now.Sub(p.loadedAt) < pageCacheTTL && !p.feed.loading && p.feed.err == ""
+	return !p.loadedAt.IsZero() && now.Sub(p.loadedAt) < pageCacheTTL && !p.feed.loading && !p.feed.partial && p.feed.err == ""
 }
 
 func (a *app) cacheCurrentPage() {

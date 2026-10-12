@@ -110,6 +110,10 @@ func (a *app) rowView(c *ui.Context, i int) {
 		ui.Row(c).Height(360).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 			m3.LoadingIndicator(c, 72, true)
 		})
+	case rowStreaming:
+		ui.Row(c).Height(96).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+			m3.LoadingIndicator(c, 40, true)
+		})
 	case rowError:
 		a.message(c, m3.IconError, "Something went wrong", firstLine(r.title), "Try again", a.retry)
 	case rowEmpty:

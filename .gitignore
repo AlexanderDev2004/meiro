@@ -6,3 +6,4 @@ mygo_windows_*.syso
 /resources/darwin-*/
 /resources/linux-*/
 /resources/windows-*/
+/meiro

@@ -135,10 +135,17 @@ func BenchmarkGetAllLibrary(b *testing.B) {
 	}))
 	defer server.Close()
 	c := NewClient(Options{APIKey: "k", BaseURL: server.URL})
+	var firstPaint time.Duration
 	for b.Loop() {
-		library, err := c.GetAllLibrary(context.Background())
+		start := time.Now()
+		library, err := c.StreamLibrary(context.Background(), func(*BrowseResult) {
+			if firstPaint == 0 || time.Since(start) < firstPaint {
+				firstPaint = time.Since(start)
+			}
+		})
 		if err != nil || len(library.Items) != shelves*(pages+1) {
 			b.Fatalf("library = %d items, %v", len(library.Items), err)
 		}
 	}
+	b.ReportMetric(float64(firstPaint.Milliseconds()), "ms-to-first-paint")
 }

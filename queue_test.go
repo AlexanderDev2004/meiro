@@ -86,3 +86,63 @@ func TestReplaceWithATrackOutsideTheTracksPlaysItAlone(t *testing.T) {
 		t.Errorf("queue %v at %d", got, q.index)
 	}
 }
+
+func TestQueueRemoveKeepsItsPlace(t *testing.T) {
+	q := newQueue()
+	chosen := tracks("a", "b", "c", "d")
+	q.replace(chosen[2], chosen, 2, "")
+	q.appendGenerated(tracks("r1", "r2"))
+	q.insert(youtube.MusicItem{VideoID: "n"}, true, true) // a b c n d r1 r2
+
+	if q.remove(q.index) {
+		t.Error("removed the track playing")
+	}
+	if !q.remove(0) || q.current().VideoID != "c" || q.recStart != 4 {
+		t.Errorf("before the current: %v at %d, recStart %d", ids(q.items), q.index, q.recStart)
+	}
+	q.remove(q.find("n"))
+	if q.playNext != "" {
+		t.Errorf("play-next mark %q outlived its track", q.playNext)
+	}
+	q.remove(q.find("r1"))
+	if _, ok := q.generated["r1"]; ok || q.recStart != 3 || q.at(q.recStart).VideoID != "r2" {
+		t.Errorf("generated: %v, recStart %d", ids(q.items), q.recStart)
+	}
+	q.remove(q.find("r2"))
+	if q.recStart != -1 || len(q.generated) != 0 {
+		t.Errorf("no generated tracks left, recStart %d", q.recStart)
+	}
+	if got := ids(q.items); !slices.Equal(got, []string{"b", "c", "d"}) || q.current().VideoID != "c" {
+		t.Errorf("queue %v", got)
+	}
+}
+
+func TestQueueShiftAndClear(t *testing.T) {
+	q := newQueue()
+	chosen := tracks("a", "b", "c")
+	q.replace(chosen[0], chosen, 0, "")
+	q.appendGenerated(tracks("r1", "r2"))
+
+	if !q.shift(1, 1) || !slices.Equal(ids(q.items), []string{"a", "c", "b", "r1", "r2"}) {
+		t.Fatalf("down: %v", ids(q.items))
+	}
+	if q.shift(0, -1) || q.shift(4, 1) {
+		t.Error("moved past an end")
+	}
+	// Down past the divider makes the track the first of the generated ones'
+	// neighbours: the boundary stays on the generated tracks.
+	q.shift(2, 1)
+	if q.at(q.recStart).VideoID != "r1" || q.current().VideoID != "a" {
+		t.Errorf("across the divider: %v, recStart %d", ids(q.items), q.recStart)
+	}
+	if !q.shift(q.recStart, -1) || q.at(q.recStart).VideoID != "r1" {
+		t.Errorf("up across the divider: %v, recStart %d", ids(q.items), q.recStart)
+	}
+
+	if !q.clearUpcoming() || !slices.Equal(ids(q.items), []string{"a"}) || q.recStart != -1 || len(q.generated) != 0 {
+		t.Errorf("clear: %v", ids(q.items))
+	}
+	if q.clearUpcoming() {
+		t.Error("cleared an empty queue")
+	}
+}

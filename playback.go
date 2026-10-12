@@ -385,9 +385,46 @@ func (a *app) enqueue(item youtube.MusicItem, playNext bool) {
 // moveQueue carries out a drag in the queue's list.
 func (a *app) moveQueue(rows []int, to int) {
 	if a.queue.moveRows(rows, to) {
-		a.nowPlaying.queueFollow = "" // the list scrolls to the current track again
-		a.syncSystemMedia()
+		a.queueChanged()
 	}
+}
+
+// removeFromQueue drops the track at a place in the queue. The track playing
+// stays.
+func (a *app) removeFromQueue(index int) {
+	if index < 0 || index >= a.queue.len() {
+		return
+	}
+	title := a.queue.at(index).Title
+	if !a.queue.remove(index) {
+		return
+	}
+	a.notice = "Removed " + title + " from the queue"
+	a.queueChanged()
+}
+
+// shiftInQueue moves the track at a place in the queue one up or down.
+func (a *app) shiftInQueue(index, delta int) {
+	if a.queue.shift(index, delta) {
+		a.queueChanged()
+	}
+}
+
+// clearUpcoming empties the queue after the track playing.
+func (a *app) clearUpcoming() {
+	if a.queue.clearUpcoming() {
+		a.notice = "Cleared the queue"
+		a.queueChanged()
+	}
+}
+
+// queueChanged follows an edit of the queue: what plays next may be another
+// track now.
+func (a *app) queueChanged() {
+	a.nowPlaying.queueFollow = "" // the list scrolls to the current track again
+	a.warmNext()
+	a.ensureUpNext()
+	a.syncSystemMedia()
 }
 
 // playVideoID starts a video, wherever it comes from: a link, a history

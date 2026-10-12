@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -335,5 +336,29 @@ func TestACachedTrackPlaysWithoutResolving(t *testing.T) {
 	}
 	if a.current.VideoID != "three" || a.stream.busy() {
 		t.Errorf("current=%q resolving=%v", a.current.VideoID, a.stream.busy())
+	}
+}
+
+func TestEditingTheQueueKeepsPlayingAndFollowsTheEdits(t *testing.T) {
+	a, _ := playbackApp(t)
+	q := tracks("a", "b", "c", "d")
+	a.play(q[0], q)
+
+	a.removeFromQueue(1)
+	if got := ids(a.queue.items); !slices.Equal(got, []string{"a", "c", "d"}) || a.current.VideoID != "a" {
+		t.Fatalf("after the removal: %v, playing %q", got, a.current.VideoID)
+	}
+	a.removeFromQueue(0) // the track playing stays
+	a.shiftInQueue(2, -1)
+	if got := ids(a.queue.items); !slices.Equal(got, []string{"a", "d", "c"}) {
+		t.Fatalf("after the move: %v", got)
+	}
+	a.trackEnded()
+	if a.current.VideoID != "d" {
+		t.Errorf("played %q after the move, want d", a.current.VideoID)
+	}
+	a.clearUpcoming()
+	if got := ids(a.queue.items); !slices.Equal(got, []string{"a", "d"}) || a.current.VideoID != "d" {
+		t.Errorf("after clearing: %v, playing %q", got, a.current.VideoID)
 	}
 }

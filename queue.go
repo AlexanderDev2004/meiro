@@ -143,6 +143,61 @@ func (q *queue) insert(item youtube.MusicItem, playNext, autoPlay bool) {
 	}
 }
 
+// remove drops the track at index, which must not be the current one. The
+// current place, the play-next mark and the boundary of the generated tracks
+// follow. It reports whether anything was removed.
+func (q *queue) remove(index int) bool {
+	if index < 0 || index >= len(q.items) || index == q.index {
+		return false
+	}
+	id := q.items[index].VideoID
+	q.items = slices.Delete(q.items, index, index+1)
+	if index < q.index {
+		q.index--
+	}
+	if id == q.playNext {
+		q.playNext = ""
+	}
+	if q.recStart >= 0 {
+		if index < q.recStart {
+			q.recStart--
+		} else {
+			delete(q.generated, id)
+		}
+		if q.recStart >= len(q.items) {
+			q.recStart = -1
+		}
+	}
+	return true
+}
+
+// clearUpcoming drops every track that follows the current one, the
+// generated tracks included, and reports whether there were any.
+func (q *queue) clearUpcoming() bool {
+	if q.remaining() < 1 {
+		return false
+	}
+	q.items = slices.Clone(q.items[:q.index+1])
+	q.playNext = ""
+	q.recStart = -1
+	q.generated = map[string]struct{}{}
+	return true
+}
+
+// shift moves the track at index by delta places, one up or down the list,
+// across the divider if it is in the way. It reports whether anything moved.
+func (q *queue) shift(index, delta int) bool {
+	target := index + delta
+	if index < 0 || index >= len(q.items) || target < 0 || target >= len(q.items) {
+		return false
+	}
+	to := q.rowOf(target)
+	if delta > 0 {
+		to++
+	}
+	return q.moveRows([]int{q.rowOf(index)}, to)
+}
+
 // regenerate counts the generated tracks again from the boundary, for a
 // queue that goes back to auto-play.
 func (q *queue) regenerate() {

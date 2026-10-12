@@ -387,7 +387,7 @@ func (a *app) nowPlayingArtwork(c *ui.Context, imageSize int, artSize, radius fl
 		a.menu.show(key, false, 0, 0)
 	}
 	if a.menu.owns(key) {
-		a.songMenu(c, menuButton, key, a.current)
+		a.songMenu(c, menuButton, key, a.current, songOptions{})
 	}
 }
 
@@ -471,6 +471,12 @@ func (a *app) queueView(c *ui.Context) {
 		a.message(c, m3.IconQueue, "The queue is empty", "", "", nil)
 		return
 	}
+	ui.Row(c).Padding(0, 16, 4).AlignItems(ui.Center).Children(func() {
+		m3.Text(c, m3.BodySmall, strconv.Itoa(q.remaining())+" up next").Grow(1).TextColor(sc.OnSurfaceVariant)
+		if m3.Button(c, m3.ButtonSpec{Label: "Clear", Kind: m3.TextOnly, Size: m3.ExtraSmall32, Disabled: q.remaining() < 1, Key: "queue-clear"}).Clicked() {
+			a.clearUpcoming()
+		}
+	})
 	list := &a.nowPlaying.queueList
 	// A press in a row can replace the queue while the list still asks about
 	// a row of the one before, so every question checks the row is there.

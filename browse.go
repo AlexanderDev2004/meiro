@@ -346,7 +346,7 @@ func (a *app) cardMenu(c *ui.Context, anchor ui.Element, key string, item youtub
 	}
 	target := item.Target()
 	if target.Kind == youtube.TargetTrack {
-		a.songMenu(c, anchor, key, item)
+		a.songMenu(c, anchor, key, item, songOptions{})
 		return
 	}
 	m3.Menu(c, anchor, &a.menu.open, 232, func() {
@@ -502,7 +502,7 @@ func (a *app) songRow(c *ui.Context, item youtube.MusicItem, queue []youtube.Mus
 		}
 	}
 	if hasMenu && a.menu.owns(key) {
-		a.songMenu(c, a.menu.anchor(menuButton, menuAnchor, hasAnchor), key, item)
+		a.songMenu(c, a.menu.anchor(menuButton, menuAnchor, hasAnchor), key, item, o)
 	}
 	if main.Clicked() {
 		if o.directQueue {
@@ -514,7 +514,7 @@ func (a *app) songRow(c *ui.Context, item youtube.MusicItem, queue []youtube.Mus
 }
 
 // songMenu offers local queue actions and read-only actions for a track.
-func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtube.MusicItem) {
+func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtube.MusicItem, o songOptions) {
 	if !a.menu.owns(key) {
 		return
 	}
@@ -526,13 +526,17 @@ func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtub
 				close()
 			}
 		}
-		if m3.MenuItem(c, "Play next", m3.IconNext).Clicked() {
-			a.enqueue(item, true)
-			close()
-		}
-		if m3.MenuItem(c, "Add to queue", m3.IconQueue).Clicked() {
-			a.enqueue(item, false)
-			close()
+		if o.list == "queue" {
+			a.queueMenuItems(c, o.position, close)
+		} else {
+			if m3.MenuItem(c, "Play next", m3.IconNext).Clicked() {
+				a.enqueue(item, true)
+				close()
+			}
+			if m3.MenuItem(c, "Add to queue", m3.IconQueue).Clicked() {
+				a.enqueue(item, false)
+				close()
+			}
 		}
 		if item.VideoID != "" && m3.MenuItem(c, "Add to playlist", m3.IconLibrary).Clicked() {
 			a.openAddToPlaylist(item)
@@ -544,6 +548,27 @@ func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtub
 			close()
 		}
 	})
+}
+
+// queueMenuItems are the edits a row of the queue offers for the track at a
+// place in it. The track playing stays where it is.
+func (a *app) queueMenuItems(c *ui.Context, index int, close func()) {
+	q := &a.queue
+	if index == q.index || index >= q.len() {
+		return
+	}
+	if index > 0 && m3.MenuItem(c, "Move up", m3.IconExpandLess).Clicked() {
+		a.shiftInQueue(index, -1)
+		close()
+	}
+	if index < q.len()-1 && m3.MenuItem(c, "Move down", m3.IconExpandMore).Clicked() {
+		a.shiftInQueue(index, 1)
+		close()
+	}
+	if m3.MenuItem(c, "Remove from queue", m3.IconClose).Clicked() {
+		a.removeFromQueue(index)
+		close()
+	}
 }
 
 // hero is the heading of an album, a playlist or an artist: its artwork large

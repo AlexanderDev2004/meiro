@@ -90,23 +90,42 @@ func (o *jsonObject) MarshalJSON() ([]byte, error) {
 // decodeResponse parses a response into the ordered form the extractors walk.
 // It gives nil, which they read as empty, for what is not JSON.
 func decodeResponse(raw json.RawMessage) any {
-	decoder := jsontext.NewDecoder(bytes.NewReader(raw), jsontext.AllowDuplicateNames(true))
-	value, err := readJSON(decoder)
+	parser := jsonParser{
+		decoder: jsontext.NewDecoder(bytes.NewReader(raw), jsontext.AllowDuplicateNames(true)),
+		keys:    make(map[string]string, 64),
+	}
+	value, err := parser.read()
 	if err != nil {
 		return nil
 	}
 	return value
 }
 
-// readJSON reads one JSON value: an object, an array, or a scalar.
-func readJSON(decoder *jsontext.Decoder) (any, error) {
-	switch decoder.PeekKind() {
+// jsonParser builds the ordered form from a decoder. It holds what a parse
+// shares across all of its objects and arrays, so each of those costs one
+// exact-size allocation instead of a run of growing ones.
+type jsonParser struct {
+	decoder *jsontext.Decoder
+	// keys interns member names. A response repeats a few hundred names
+	// ("runs", "text", "navigationEndpoint"...) tens of thousands of times,
+	// and a name is only ever compared, never changed.
+	keys map[string]string
+	// members and elements are stacks of the objects and arrays being read:
+	// an object's members sit above its parent's until it ends, and are then
+	// copied out at their exact count.
+	members  []jsonMember
+	elements []any
+}
+
+// read reads one JSON value: an object, an array, or a scalar.
+func (p *jsonParser) read() (any, error) {
+	switch p.decoder.PeekKind() {
 	case jsontext.KindBeginObject:
-		return readJSONObject(decoder)
+		return p.readObject()
 	case jsontext.KindBeginArray:
-		return readJSONArray(decoder)
+		return p.readArray()
 	default:
-		token, err := decoder.ReadToken()
+		token, err := p.decoder.ReadToken()
 		if err != nil {
 			return nil, err
 		}
@@ -129,43 +148,86 @@ func readJSON(decoder *jsontext.Decoder) (any, error) {
 	}
 }
 
-func readJSONObject(decoder *jsontext.Decoder) (*jsonObject, error) {
-	if _, err := decoder.ReadToken(); err != nil { // '{'
+// readKey reads a member name, sharing one string between every member that
+// has it.
+func (p *jsonParser) readKey() (string, error) {
+	raw, err := p.decoder.ReadValue()
+	if err != nil {
+		return "", err
+	}
+	quoted := []byte(raw)
+	if bytes.IndexByte(quoted, '\\') >= 0 {
+		name, err := jsontext.AppendUnquote(nil, raw)
+		if err != nil {
+			return "", err
+		}
+		return string(name), nil
+	}
+	name := quoted[1 : len(quoted)-1]
+	if key, ok := p.keys[string(name)]; ok {
+		return key, nil
+	}
+	key := string(name)
+	p.keys[key] = key
+	return key, nil
+}
+
+func (p *jsonParser) readObject() (*jsonObject, error) {
+	if _, err := p.decoder.ReadToken(); err != nil { // '{'
 		return nil, err
 	}
-	object := &jsonObject{}
-	for decoder.PeekKind() != jsontext.KindEndObject {
-		name, err := decoder.ReadToken()
+	base := len(p.members)
+	for p.decoder.PeekKind() != jsontext.KindEndObject {
+		key, err := p.readKey()
 		if err != nil {
 			return nil, err
 		}
-		key := name.String()
-		value, err := readJSON(decoder)
+		value, err := p.read()
 		if err != nil {
 			return nil, err
 		}
-		object.set(key, value)
+		// A repeated name replaces the earlier member, as decoding into a
+		// map would keep the last one.
+		replaced := false
+		for index := base; index < len(p.members); index++ {
+			if p.members[index].key == key {
+				p.members[index].value = value
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			p.members = append(p.members, jsonMember{key: key, value: value})
+		}
 	}
-	if _, err := decoder.ReadToken(); err != nil { // '}'
+	if _, err := p.decoder.ReadToken(); err != nil { // '}'
 		return nil, err
 	}
+	object := &jsonObject{members: make([]jsonMember, len(p.members)-base)}
+	copy(object.members, p.members[base:])
+	clear(p.members[base:])
+	p.members = p.members[:base]
 	return object, nil
 }
 
-func readJSONArray(decoder *jsontext.Decoder) ([]any, error) {
-	if _, err := decoder.ReadToken(); err != nil { // '['
+func (p *jsonParser) readArray() ([]any, error) {
+	if _, err := p.decoder.ReadToken(); err != nil { // '['
 		return nil, err
 	}
-	array := make([]any, 0)
-	for decoder.PeekKind() != jsontext.KindEndArray {
-		value, err := readJSON(decoder)
+	base := len(p.elements)
+	for p.decoder.PeekKind() != jsontext.KindEndArray {
+		value, err := p.read()
 		if err != nil {
 			return nil, err
 		}
-		array = append(array, value)
+		p.elements = append(p.elements, value)
 	}
-	if _, err := decoder.ReadToken(); err != nil { // ']'
+	if _, err := p.decoder.ReadToken(); err != nil { // ']'
 		return nil, err
 	}
+	array := make([]any, len(p.elements)-base)
+	copy(array, p.elements[base:])
+	clear(p.elements[base:])
+	p.elements = p.elements[:base]
 	return array, nil
 }

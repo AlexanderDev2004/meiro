@@ -797,7 +797,7 @@ func continuationToken(root any) string {
 func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 	var items []MusicItem
 	var sections []MusicSection
-	seen := make(map[string]struct{})
+	seen := make(map[itemIdentity]struct{})
 	var walk func(any, *sectionItems)
 	walk = func(value any, section *sectionItems) {
 		switch node := value.(type) {
@@ -809,7 +809,7 @@ func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 			for _, member := range node.members {
 				if section == nil && wantSections && isSectionRenderer(member.key) {
 					if renderer, ok := member.value.(*jsonObject); ok {
-						current := &sectionItems{seen: make(map[string]struct{})}
+						current := &sectionItems{seen: make(map[itemIdentity]struct{})}
 						walk(renderer, current)
 						sections = append(sections, MusicSection{
 							Title: rendererTitle(renderer), Kind: member.key,
@@ -836,7 +836,7 @@ func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 // rather than against the whole page.
 type sectionItems struct {
 	items []MusicItem
-	seen  map[string]struct{}
+	seen  map[itemIdentity]struct{}
 }
 
 // parseMusicRenderer reads the item a key and value name, when the key names an
@@ -969,12 +969,12 @@ func rendererBool(value any) bool {
 // appendMusicItem keeps a parsed item unless its renderer held nothing to
 // identify it by. A playlist may hold a song twice; its entries differ by
 // the ID the playlist gave each, which keeps both.
-func appendMusicItem(items *[]MusicItem, seen map[string]struct{}, item MusicItem, renderer *jsonObject) {
-	identity := strings.Join([]string{
-		item.VideoID, item.BrowseID, item.PlaylistID, item.Title,
-		nestedString(renderer.get("playlistItemData"), "playlistSetVideoId"),
-	}, "\x00")
-	if identity == "\x00\x00\x00\x00" {
+func appendMusicItem(items *[]MusicItem, seen map[itemIdentity]struct{}, item MusicItem, renderer *jsonObject) {
+	identity := itemIdentity{
+		videoID: item.VideoID, browseID: item.BrowseID, playlistID: item.PlaylistID, title: item.Title,
+		setVideoID: nestedString(renderer.get("playlistItemData"), "playlistSetVideoId"),
+	}
+	if identity == (itemIdentity{}) {
 		return
 	}
 	if _, exists := seen[identity]; exists {
@@ -982,6 +982,12 @@ func appendMusicItem(items *[]MusicItem, seen map[string]struct{}, item MusicIte
 	}
 	seen[identity] = struct{}{}
 	*items = append(*items, item)
+}
+
+// itemIdentity is what makes two renderers the same item. A struct of strings
+// hashes in place, where joining them into one key allocated for every item.
+type itemIdentity struct {
+	videoID, browseID, playlistID, title, setVideoID string
 }
 
 // parseMusicCardShelf reads a search's top result. It carries its media in

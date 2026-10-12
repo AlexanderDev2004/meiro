@@ -261,3 +261,41 @@ func TestStatsPageShowsChartAndTops(t *testing.T) {
 		}
 	}
 }
+
+func TestCalendarDayCountsDaysAcrossZonesAndDST(t *testing.T) {
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no tz database")
+	}
+	// The spring-forward day is 23 hours long, the fall-back day 25.
+	start := time.Date(2026, 3, 6, 23, 30, 0, 0, zone)
+	for d := 0; d < 400; d++ {
+		at := start.AddDate(0, 0, d)
+		if got, want := calendarDay(at)-calendarDay(start), d; got != want {
+			t.Fatalf("calendarDay(%s) - calendarDay(%s) = %d, want %d", at, start, got, want)
+		}
+		if got, want := calendarDay(at.Add(-23*time.Hour-29*time.Minute))-calendarDay(at), 0; got > want {
+			t.Fatalf("an earlier time on the same day moved the day forward")
+		}
+	}
+}
+
+func TestStatsSummaryIsKeptUntilTheHistoryChanges(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	a := newTestApp()
+	a.historyLoaded = true
+	a.history = []historyEntry{{VideoID: "a", Title: "Alpha", Artist: "Ann", PlayedAt: now.Add(-time.Hour)}}
+	if got := a.statsSummary(now, 14).totalPlays; got != 1 {
+		t.Fatalf("plays = %d, want 1", got)
+	}
+	a.recordHistory(youtube.MusicItem{VideoID: "b", Title: "Beta", Subtitle: "Bob"})
+	if got := a.statsSummary(now.Add(time.Minute), 14).totalPlays; got != 2 {
+		t.Fatalf("plays after a track started = %d, want 2", got)
+	}
+	if got := a.statsSummary(now.Add(time.Minute), 7); len(got.byDay) != 7 {
+		t.Fatalf("days = %d, want 7 after the range changed", len(got.byDay))
+	}
+	if got := a.statsSummary(now.AddDate(0, 0, 1), 14); got.byDay[13].plays != 0 {
+		t.Fatalf("today's plays = %d, want 0 after midnight passed", got.byDay[13].plays)
+	}
+}

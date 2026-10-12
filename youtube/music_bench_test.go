@@ -1,7 +1,10 @@
 package youtube
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -62,5 +65,38 @@ func BenchmarkNewUpNextResult(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		c.newUpNextResult(raw)
+	}
+}
+
+// BenchmarkVideoIDs is what a write naming a whole library's worth of songs
+// costs to clean up.
+func BenchmarkVideoIDs(b *testing.B) {
+	videos := make([]string, 5000)
+	for i := range videos {
+		videos[i] = fmt.Sprintf(" video%d ", i%4500)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		videoIDs(videos)
+	}
+}
+
+// BenchmarkExecute is the cost of one API round trip on the client's side,
+// over a loopback server that answers with a home page.
+func BenchmarkExecute(b *testing.B) {
+	raw := benchResponse()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	}))
+	defer server.Close()
+	c := NewClient(Options{APIKey: "k", BaseURL: server.URL})
+	ctx := context.Background()
+	b.SetBytes(int64(len(raw)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := c.execute(ctx, "browse", map[string]any{"browseId": "FEmusic_home"}); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

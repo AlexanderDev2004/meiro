@@ -239,11 +239,12 @@ func (c *Client) executeForClient(ctx context.Context, endpoint string, payload 
 	if err != nil {
 		return nil, err
 	}
-	var result json.RawMessage
-	if err := json.Unmarshal(responseBody, &result); err != nil {
-		return nil, fmt.Errorf("youtube: decode %s response: %w", endpoint, err)
+	// The body is the result as it came: unmarshalling it into a RawMessage
+	// only checked it, and copied all of it to do so.
+	if !json.Valid(responseBody) {
+		return nil, fmt.Errorf("youtube: decode %s response: invalid JSON", endpoint)
 	}
-	return result, nil
+	return json.RawMessage(responseBody), nil
 }
 
 func isYouTubeURL(endpoint *url.URL) bool {

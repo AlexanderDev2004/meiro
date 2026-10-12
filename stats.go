@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -44,7 +45,9 @@ func (a *app) recordHistory(item youtube.MusicItem) {
 		PlayedAt: time.Now(),
 	})
 	if len(a.history) > maxHistoryEntries {
-		a.history = append([]historyEntry(nil), a.history[len(a.history)-maxHistoryEntries:]...)
+		// Slide the newest entries down in place: reallocating the whole
+		// history on every play once it is full copied it all each time.
+		a.history = slices.Delete(a.history, 0, len(a.history)-maxHistoryEntries)
 	}
 	a.saveHistory()
 }
@@ -147,13 +150,14 @@ func summarizeHistory(entries []historyEntry, now time.Time, days int) statsSumm
 	seenArtists := make(map[string]struct{})
 	tracks := make(map[string]*trackCount)
 	artists := make(map[string]*trackCount)
-	dayIndex := make(map[string]int)
 	cutoff := startOfDay(now).AddDate(0, 0, -days+1)
-	for d := 0; d < days; d++ {
-		day := cutoff.AddDate(0, 0, d)
-		dayIndex[day.Format("2006-01-02")] = d
-		summary.byDay = append(summary.byDay, dayCount{day: day})
+	summary.byDay = make([]dayCount, days)
+	for d := range summary.byDay {
+		summary.byDay[d].day = cutoff.AddDate(0, 0, d)
 	}
+	// Days are told apart by their calendar number, so placing a play costs
+	// arithmetic instead of formatting its date into a string to look up.
+	firstDay := calendarDay(cutoff)
 	for _, e := range entries {
 		if e.PlayedAt.Before(cutoff) {
 			continue
@@ -178,7 +182,7 @@ func summarizeHistory(entries []historyEntry, now time.Time, days int) statsSumm
 			}
 			ac.plays++
 		}
-		if i, ok := dayIndex[startOfDay(e.PlayedAt).Format("2006-01-02")]; ok {
+		if i := calendarDay(e.PlayedAt) - firstDay; i >= 0 && i < days {
 			summary.byDay[i].plays++
 		}
 	}
@@ -186,6 +190,44 @@ func summarizeHistory(entries []historyEntry, now time.Time, days int) statsSumm
 	summary.topTracks = topCounts(tracks, 5)
 	summary.topArtists = topCounts(artists, 5)
 	return summary
+}
+
+// calendarDay numbers the day t falls on, in its own zone, counting from a
+// fixed origin, so consecutive days differ by one whatever the zone's offset.
+func calendarDay(t time.Time) int {
+	y, m, d := t.Date()
+	return int(time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400)
+}
+
+// statsMemo holds the summary the stats page last built, and what it was built
+// from. The page rebuilds on every frame of an animation, but the history only
+// changes when a track starts.
+type statsMemo struct {
+	summary statsSummary
+	entries int
+	last    time.Time
+	days    int
+	today   int
+	valid   bool
+}
+
+// summary returns the summary of the history over days days ending today,
+// folding the history again only when it has changed.
+func (a *app) statsSummary(now time.Time, days int) statsSummary {
+	var last time.Time
+	if n := len(a.history); n > 0 {
+		last = a.history[n-1].PlayedAt
+	}
+	memo := &a.stats
+	today := calendarDay(now)
+	if memo.valid && memo.entries == len(a.history) && memo.last.Equal(last) && memo.days == days && memo.today == today {
+		return memo.summary
+	}
+	*memo = statsMemo{
+		summary: summarizeHistory(a.history, now, days),
+		entries: len(a.history), last: last, days: days, today: today, valid: true,
+	}
+	return memo.summary
 }
 
 // topCounts keeps the n highest counts, most plays first.
@@ -219,7 +261,7 @@ func (a *app) statsPage(c *ui.Context) {
 	if a.statsRange == 0 {
 		a.statsRange = 14
 	}
-	summary := summarizeHistory(a.history, c.Now(), a.statsRange)
+	summary := a.statsSummary(c.Now(), a.statsRange)
 	ui.Scroll(c).Grow(1).Padding(0, pageGutter, a.clearance()).Children(func() {
 		ui.Column(c).MaxWidth(780).Gap(16).Children(func() {
 			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {

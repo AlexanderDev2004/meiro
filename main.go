@@ -218,6 +218,7 @@ type app struct {
 	history               []historyEntry
 	historyLoaded         bool
 	statsRange            int // days the stats page covers: 7, 14 or 30
+	stats                 statsMemo
 
 	// job numbers page loads, so a slow one for a page the user has left
 	// is dropped when it lands.

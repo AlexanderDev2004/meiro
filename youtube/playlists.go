@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -101,11 +100,16 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID, videoID string) 
 // videoIDs returns the videos of a write, without the blanks and the repeats.
 func videoIDs(videos []string) []string {
 	var ids []string
+	seen := make(map[string]struct{}, len(videos))
 	for _, video := range videos {
 		video = strings.TrimSpace(video)
-		if video == "" || slices.Contains(ids, video) {
+		if video == "" {
 			continue
 		}
+		if _, repeat := seen[video]; repeat {
+			continue
+		}
+		seen[video] = struct{}{}
 		ids = append(ids, video)
 	}
 	return ids

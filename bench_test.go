@@ -5,6 +5,7 @@ import (
 	"image"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -135,5 +136,54 @@ func BenchmarkSettingsFrame(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tt.Frame()
+	}
+}
+
+// benchHistory is n plays spread over the last year, from 400 different tracks.
+func benchHistory(n int, now time.Time) []historyEntry {
+	entries := make([]historyEntry, n)
+	for i := range entries {
+		id := strconv.Itoa(i % 400)
+		entries[i] = historyEntry{
+			VideoID: "v" + id, Title: "Song " + id, Artist: "Artist " + strconv.Itoa(i%60),
+			PlayedAt: now.Add(-time.Duration(i) * 105 * time.Minute),
+		}
+	}
+	return entries
+}
+
+// BenchmarkSummarizeHistory is what each frame of the stats page costs once the
+// history has reached its cap.
+func BenchmarkSummarizeHistory(b *testing.B) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.Local)
+	entries := benchHistory(maxHistoryEntries, now)
+	b.ReportAllocs()
+	for b.Loop() {
+		summarizeHistory(entries, now, 30)
+	}
+}
+
+// BenchmarkRecordHistory is the cost of starting a track once the history is
+// full and every play pushes the oldest one out.
+func BenchmarkRecordHistory(b *testing.B) {
+	a := newTestApp()
+	a.historyLoaded = true
+	a.history = benchHistory(maxHistoryEntries, time.Now())
+	item := youtube.MusicItem{VideoID: "v1", Title: "Song", Subtitle: "Artist"}
+	b.ReportAllocs()
+	for b.Loop() {
+		a.recordHistory(item)
+	}
+}
+
+// BenchmarkStatsSummary is a frame of the stats page after the first: the
+// history has not changed, so the page should not fold it again.
+func BenchmarkStatsSummary(b *testing.B) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.Local)
+	a := newTestApp()
+	a.history = benchHistory(maxHistoryEntries, now)
+	b.ReportAllocs()
+	for b.Loop() {
+		a.statsSummary(now, 30)
 	}
 }

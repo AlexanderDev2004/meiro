@@ -1139,3 +1139,27 @@ func TestBrowseResultReadsThePageHeading(t *testing.T) {
 		t.Errorf("a page without a header gave %q with %q", plain.Title, plain.Thumbnail)
 	}
 }
+
+func TestDecodeResponseKeepsOrderDuplicatesAndEscapedNames(t *testing.T) {
+	root, ok := decodeResponse([]byte(`{"b":1,"a":[{"x":{"y":[]},"x":2},[],null,"s"],"b":true,"c":"esc","a\n":0}`)).(*jsonObject)
+	if !ok {
+		t.Fatal("root is not an object")
+	}
+	var keys []string
+	for _, member := range root.members {
+		keys = append(keys, member.key)
+	}
+	if want := []string{"b", "a", "c", "a\n"}; !slices.Equal(keys, want) {
+		t.Fatalf("keys = %q, want %q: a repeated name keeps its first place and its last value", keys, want)
+	}
+	if root.get("b") != true || root.get("c") != "esc" {
+		t.Fatalf("values = %v, %v", root.get("b"), root.get("c"))
+	}
+	array := root.get("a").([]any)
+	if len(array) != 4 || array[0].(*jsonObject).get("x") != float64(2) || len(array[1].([]any)) != 0 || array[2] != nil || array[3] != "s" {
+		t.Fatalf("array = %#v", array)
+	}
+	if decodeResponse([]byte(`{"a":`)) != nil || decodeResponse([]byte(`nope`)) != nil {
+		t.Fatal("malformed JSON should decode to nil")
+	}
+}

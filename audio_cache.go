@@ -164,13 +164,6 @@ func (c *audioCache) get(videoID string) (string, bool) {
 	return file.path, true
 }
 
-// enqueue downloads videoID in the background with yt-dlp unless it is
-// already cached or queued. One worker keeps disk use within the configured
-// item limit.
-func (c *audioCache) enqueue(videoID, cookie string) {
-	c.enqueueDownload(audioCacheDownload{videoID: videoID, cookie: cookie})
-}
-
 // enqueueStream caches a track whose direct audio URL the app resolved while
 // starting playback. The URL is downloaded as it is, so starting a track does
 // not resolve the same track a second time through yt-dlp.
@@ -426,15 +419,6 @@ func (c *audioCache) scanLocked() {
 		}
 		c.files[key] = audioCacheFile{key: key, path: filepath.Join(c.dir, entry.Name()), used: info.ModTime()}
 	}
-}
-
-// filesLocked returns the indexed cache files. The caller holds c.mu.
-func (c *audioCache) filesLocked() []audioCacheFile {
-	files := make([]audioCacheFile, 0, len(c.files))
-	for _, file := range c.files {
-		files = append(files, file)
-	}
-	return files
 }
 
 func audioCacheKey(videoID string) string {

@@ -50,18 +50,6 @@ func (o *jsonObject) has(key string) bool {
 	return false
 }
 
-// set stores value under key. A repeated name replaces the earlier member, as
-// decoding into a map would keep the last one.
-func (o *jsonObject) set(key string, value any) {
-	for index := range o.members {
-		if o.members[index].key == key {
-			o.members[index].value = value
-			return
-		}
-	}
-	o.members = append(o.members, jsonMember{key: key, value: value})
-}
-
 // MarshalJSON encodes the object with its members in document order, so a
 // parsed subtree can be sent back as a request payload.
 func (o *jsonObject) MarshalJSON() ([]byte, error) {

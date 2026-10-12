@@ -40,6 +40,18 @@ func (r *resolved) resolve(_ context.Context, videoID, _ string) (string, time.D
 // asked reports whether the resolver was asked for videoID. The app also
 // resolves the next track ahead of time, so the last ask is not the track
 // playing.
+func (r *resolved) count(videoID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, id := range r.ids {
+		if id == videoID {
+			n++
+		}
+	}
+	return n
+}
+
 func (r *resolved) asked(videoID string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -202,8 +214,8 @@ func TestAnUnplayableTrackSaysWhyAndRetries(t *testing.T) {
 	// Pressing play asks for the same track again.
 	delete(r.err, "bad")
 	a.togglePlay()
-	if a.playErr != "" {
-		t.Errorf("play did not try the track again: %q", a.playErr)
+	if r.count("bad") != 2 || a.playErr == "video unavailable" {
+		t.Errorf("play did not resolve the track again: %d resolves, playErr %q", r.count("bad"), a.playErr)
 	}
 }
 

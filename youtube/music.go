@@ -470,12 +470,6 @@ func (c *Client) GetUpNext(ctx context.Context, options UpNextOptions) (*BrowseR
 	return upNextResult(decodeResponse(raw)), nil
 }
 
-// newUpNextResult reads a /next response. The response is parsed once, and its
-// items, queue ID, and continuation are all read off that one tree.
-func (c *Client) newUpNextResult(raw json.RawMessage) *BrowseResult {
-	return upNextResult(decodeResponse(raw))
-}
-
 // upNextResult reads a decoded /next response.
 func upNextResult(root any) *BrowseResult {
 	items, sections := browseParts(root, true)

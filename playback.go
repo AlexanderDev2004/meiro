@@ -39,7 +39,6 @@ type playback struct {
 	// it, so that a second press does not read them again.
 	opening    task
 	openingKey string
-	hover      hoverState
 
 	suspendedWhilePlaying bool
 }
@@ -721,54 +720,6 @@ func tracksOf(result *youtube.BrowseResult, art string) []youtube.MusicItem {
 		songs = append(songs, song)
 	}
 	return songs
-}
-
-// hoverResolveDelay is how long the pointer rests on a song before its audio
-// URL is looked up, so sweeping across a list starts nothing.
-const hoverResolveDelay = 400 * time.Millisecond
-
-// hoverState is the song the pointer rests on. lookup waits out the delay
-// and then resolves the song's audio URL; resolving is set once it is past
-// the wait, so a lookup that runs yt-dlp is never superseded by another.
-type hoverState struct {
-	key       string
-	lookup    task
-	resolving bool
-}
-
-// hoverSong notes whether the pointer is on a song, drawn under key. A song
-// the pointer rests on has its audio URL resolved ahead, so a click plays
-// without waiting on yt-dlp. Only a few kilobytes are fetched; nothing is
-// downloaded. Each draw of a row reports its own state, so the row the
-// pointer left cancels its own pending lookup.
-func (a *app) hoverSong(key string, item youtube.MusicItem, hovered bool) {
-	h := &a.hover
-	if !hovered {
-		if h.key == key {
-			h.key = ""
-			if !h.resolving {
-				h.lookup.stop()
-			}
-		}
-		return
-	}
-	id := item.VideoID
-	if h.key == key || h.resolving || id == "" || id == a.current.VideoID || a.stream.busy() {
-		return
-	}
-	h.key = key
-	if _, cached := a.currentAudioCache().Get(id); cached {
-		return
-	}
-	cookie := a.account.cookie()
-	startProgress(a, &h.lookup, hoverResolveDelay+audio.ResolveTimeout, func(ctx context.Context, progress func(func())) (struct{}, error) {
-		if err := a.sleep(ctx, hoverResolveDelay); err != nil {
-			return struct{}{}, err
-		}
-		progress(func() { h.resolving = true })
-		_, _, err := a.streams.Get(ctx, id, cookie)
-		return struct{}{}, err
-	}, func(struct{}, error) { h.resolving = false })
 }
 
 // parseDuration reads a "3:42" or "1:02:03" track length.

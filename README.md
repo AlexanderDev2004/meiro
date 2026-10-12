@@ -140,7 +140,8 @@ macOS Apple Silicon and Intel, plus Linux `amd64` and `arm64` `.deb`, `.rpm`,
 - [ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg) decodes the audio,
   [yt-dlp](https://github.com/yt-dlp/yt-dlp) finds the streams, and
   [QuickJS](https://github.com/quickjs-ng/quickjs) runs the JavaScript yt-dlp
-  needs to solve YouTube's challenges. All three ship inside the app; see
+  needs to solve YouTube's challenges when Node or Bun is not installed. All
+  three ship inside the app; see
   [`resources/THIRD-PARTY-NOTICES.md`](resources/THIRD-PARTY-NOTICES.md).
 - [Google Sans](https://github.com/googlefonts/googlesans) sets the text,
   under the SIL Open Font License (`fonts/OFL.txt`).

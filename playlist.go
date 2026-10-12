@@ -154,6 +154,9 @@ type addToPlaylistState struct {
 	busy      bool
 	err       string
 	attempt   uint64
+	// list is the picker's scroll. It is a pointer, because a choice replaces
+	// this whole state while the list that took it is still being built.
+	list *ui.ListState
 }
 
 // likedMusicID is the playlist a library holds thumbs-up songs in. It is not
@@ -279,13 +282,22 @@ func (a *app) addToPlaylistDialog(c *ui.Context) {
 		case len(a.addToPlaylist.playlists) == 0:
 			m3.Text(c, m3.BodyMedium, "You have no playlists yet.").TextColor(sc.OnSurfaceVariant)
 		default:
-			ui.Scroll(c).MaxHeight(280).Children(func() {
-				ui.Column(c).Gap(2).Children(func() {
-					for _, playlist := range a.addToPlaylist.playlists {
-						a.playlistChoice(c, playlist)
-					}
-				})
-			})
+			// A library can hold hundreds of playlists: the list builds, and
+			// asks for the artwork of, only those in view.
+			playlists := a.addToPlaylist.playlists
+			if a.addToPlaylist.list == nil {
+				a.addToPlaylist.list = &ui.ListState{}
+			}
+			list := a.addToPlaylist.list
+			list.Key = func(i int) any {
+				if i >= len(playlists) {
+					return nil
+				}
+				return itemKey("add-to", playlists[i])
+			}
+			ui.List(c, list, len(playlists), func(i int) {
+				a.playlistChoice(c, playlists[i])
+			}).Height(min(float32(len(playlists))*playlistChoiceHeight, 280))
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).AlignItems(ui.Center).Children(func() {
 			if a.addToPlaylist.busy {
@@ -303,11 +315,15 @@ func (a *app) addToPlaylistDialog(c *ui.Context) {
 	})
 }
 
+// playlistChoiceHeight is the room a row of the picker takes, with the gap
+// below it.
+const playlistChoiceHeight = 58
+
 // playlistChoice is one row of the picker: a playlist the song can go into.
 func (a *app) playlistChoice(c *ui.Context, playlist youtube.MusicItem) {
 	sc := m3.Of(c).Scheme
 	row := ui.ButtonBase(c.Key(itemKey("add-to", playlist)))
-	row.Height(56).PaddingX(8).Gap(12).AlignItems(ui.Center).Radius(m3.Large).Cursor(ui.CursorPointer).
+	row.Height(56).Margin(0, 0, 2).PaddingX(8).Gap(12).AlignItems(ui.Center).Radius(m3.Large).Cursor(ui.CursorPointer).
 		Label("Add to " + playlist.Title).
 		Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
 	row.Children(func() {

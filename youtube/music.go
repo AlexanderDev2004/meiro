@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // SearchType limits search results to one music category. An empty value
@@ -204,43 +205,63 @@ func (c *Client) GetAllLibrary(ctx context.Context) (*BrowseResult, error) {
 	return result, nil
 }
 
+// drainConcurrency is how many continuation pages are asked for at once.
+const drainConcurrency = 4
+
 // drainBrowse folds every continuation page reachable from result into it.
 // label names the page in the error a runaway result produces.
+//
+// The pages are read a level at a time: those a level names are asked for
+// together, and folded in the order they were named, so the result is the one
+// a walk that asked for one page after another would give. A library's shelves
+// each have their own chain of pages, and asking for them one by one made the
+// page wait for every round trip in turn.
 func (c *Client) drainBrowse(ctx context.Context, result *BrowseResult, label string) error {
 	queue := browseContinuationQueue(result)
 	seen := make(map[string]struct{})
 	for len(queue) > 0 {
-		continuation := queue[0]
-		queue = queue[1:]
-		if _, exists := seen[continuation.token]; exists {
-			continue
-		}
-		seen[continuation.token] = struct{}{}
-		if len(seen) > 1000 {
-			return fmt.Errorf("youtube: %s exceeded 1000 continuation pages", label)
-		}
-		page, err := c.ContinueBrowse(ctx, continuation.token)
-		if err != nil {
-			return err
-		}
-		result.Items = append(result.Items, page.Items...)
-		if continuation.section >= 0 {
-			result.Sections[continuation.section].Items = append(result.Sections[continuation.section].Items, page.Items...)
-		} else {
-			result.Sections = append(result.Sections, page.Sections...)
-		}
-		if page.ContinuationToken != "" {
-			queue = append(queue, browseContinuation{token: page.ContinuationToken, section: -1})
-		}
-		for index, section := range page.Sections {
-			if section.ContinuationToken == "" {
+		var level []browseContinuation
+		exceeded := false
+		for _, continuation := range queue {
+			if _, exists := seen[continuation.token]; exists {
 				continue
 			}
-			sectionIndex := continuation.section
-			if sectionIndex < 0 {
-				sectionIndex = len(result.Sections) - len(page.Sections) + index
+			seen[continuation.token] = struct{}{}
+			if len(seen) > 1000 {
+				exceeded = true
+				break
 			}
-			queue = append(queue, browseContinuation{token: section.ContinuationToken, section: sectionIndex})
+			level = append(level, continuation)
+		}
+		queue = nil
+		pages, errs := c.continueAll(ctx, level)
+		for i, continuation := range level {
+			if errs[i] != nil {
+				return errs[i]
+			}
+			page := pages[i]
+			result.Items = append(result.Items, page.Items...)
+			if continuation.section >= 0 {
+				result.Sections[continuation.section].Items = append(result.Sections[continuation.section].Items, page.Items...)
+			} else {
+				result.Sections = append(result.Sections, page.Sections...)
+			}
+			if page.ContinuationToken != "" {
+				queue = append(queue, browseContinuation{token: page.ContinuationToken, section: -1})
+			}
+			for index, section := range page.Sections {
+				if section.ContinuationToken == "" {
+					continue
+				}
+				sectionIndex := continuation.section
+				if sectionIndex < 0 {
+					sectionIndex = len(result.Sections) - len(page.Sections) + index
+				}
+				queue = append(queue, browseContinuation{token: section.ContinuationToken, section: sectionIndex})
+			}
+		}
+		if exceeded {
+			return fmt.Errorf("youtube: %s exceeded 1000 continuation pages", label)
 		}
 	}
 	result.ContinuationToken = ""
@@ -248,6 +269,29 @@ func (c *Client) drainBrowse(ctx context.Context, result *BrowseResult, label st
 		result.Sections[index].ContinuationToken = ""
 	}
 	return nil
+}
+
+// continueAll asks for the pages of several continuations at once, a few at a
+// time, and gives each answer or error at the place of its continuation.
+func (c *Client) continueAll(ctx context.Context, continuations []browseContinuation) ([]*BrowseResult, []error) {
+	pages := make([]*BrowseResult, len(continuations))
+	errs := make([]error, len(continuations))
+	if len(continuations) == 1 {
+		pages[0], errs[0] = c.ContinueBrowse(ctx, continuations[0].token)
+		return pages, errs
+	}
+	var group sync.WaitGroup
+	slots := make(chan struct{}, drainConcurrency)
+	for i, continuation := range continuations {
+		slots <- struct{}{}
+		group.Add(1)
+		go func() {
+			defer func() { <-slots; group.Done() }()
+			pages[i], errs[i] = c.ContinueBrowse(ctx, continuation.token)
+		}()
+	}
+	group.Wait()
+	return pages, errs
 }
 
 // ContinueBrowse requests the next page for a browse or library section.

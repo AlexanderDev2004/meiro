@@ -181,3 +181,24 @@ func TestLibraryGridBuildsOnlyVisibleLines(t *testing.T) {
 		t.Fatalf("the lines hold %d cards, want 401", next)
 	}
 }
+
+// The picker of playlists to add a song to builds only the rows in view, and
+// asks for the artwork of only those.
+func TestAddToPlaylistPickerBuildsOnlyVisibleRows(t *testing.T) {
+	a := newTestApp()
+	asked := 0
+	art := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 8, 8)))
+	a.thumbs.synth = func(string, int) *ui.Bitmap { asked++; return art }
+	tt := ui.NewTester(a.view, 1000, 700)
+	playlists := make([]youtube.MusicItem, 500)
+	for i := range playlists {
+		playlists[i] = benchAlbum(i)
+		playlists[i].Kind, playlists[i].PlaylistID = "playlist", "PL"+strconv.Itoa(i)
+	}
+	a.addToPlaylist = addToPlaylistState{open: true, item: benchTracks(1)[0], playlists: playlists}
+	asked = 0
+	tt.Frame()
+	if asked == 0 || asked > 60 {
+		t.Fatalf("asked for the artwork of %d of 500 playlists in a frame; only the rows in view should be", asked)
+	}
+}

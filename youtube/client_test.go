@@ -181,6 +181,7 @@ func TestGetAllLibraryLoadsEverySectionContinuation(t *testing.T) {
 
 func TestBrowseContinuationsKeepPageAndShelfTokensSeparate(t *testing.T) {
 	var requests []string
+	var requestsMu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -192,7 +193,9 @@ func TestBrowseContinuationsKeepPageAndShelfTokensSeparate(t *testing.T) {
 			return
 		}
 		token, _ := request["continuation"].(string)
+		requestsMu.Lock()
 		requests = append(requests, token)
+		requestsMu.Unlock()
 		switch token {
 		case "PAGE_1":
 			_, _ = w.Write([]byte(`{"continuationContents":{"musicShelfContinuation":{"contents":[{"musicResponsiveListItemRenderer":{"videoId":"page-1","title":{"simpleText":"Page one"}}}],"continuations":[{"nextContinuationData":{"continuation":"SHELF_2"}}]}},"continuations":[{"nextContinuationData":{"continuation":"PAGE_2"}}]}`))
@@ -213,7 +216,8 @@ func TestBrowseContinuationsKeepPageAndShelfTokensSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(requests, []string{"PAGE_1", "SHELF_1", "PAGE_2", "SHELF_2"}) {
+	// The pages of a level are asked for together, so only the levels are in order.
+	if len(requests) != 4 || !slices.Equal(slices.Sorted(slices.Values(requests[:2])), []string{"PAGE_1", "SHELF_1"}) || !slices.Equal(slices.Sorted(slices.Values(requests[2:])), []string{"PAGE_2", "SHELF_2"}) {
 		t.Errorf("continuation requests = %v", requests)
 	}
 	if got := musicItemIDs(library.Items); !slices.Equal(got, []string{"first", "page-1", "shelf-1", "page-2", "shelf-2"}) {

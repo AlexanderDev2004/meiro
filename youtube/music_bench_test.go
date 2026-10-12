@@ -2,11 +2,13 @@ package youtube
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func benchResponse() []byte {
@@ -97,6 +99,46 @@ func BenchmarkExecute(b *testing.B) {
 	for b.Loop() {
 		if _, err := c.execute(ctx, "browse", map[string]any{"browseId": "FEmusic_home"}); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkGetAllLibrary is the wait for a whole library over a connection
+// that takes 20ms a request: six shelves, each followed by four more pages.
+func BenchmarkGetAllLibrary(b *testing.B) {
+	const shelves, pages = 6, 4
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		var request map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		token, _ := request["continuation"].(string)
+		if token == "" {
+			var sb strings.Builder
+			sb.WriteString(`{"contents":{"sectionListRenderer":{"contents":[`)
+			for s := 0; s < shelves; s++ {
+				if s > 0 {
+					sb.WriteString(",")
+				}
+				fmt.Fprintf(&sb, `{"musicShelfRenderer":{"title":{"simpleText":"Shelf %d"},"contents":[{"musicResponsiveListItemRenderer":{"videoId":"s%d-0","title":{"simpleText":"T"}}}],"continuations":[{"nextContinuationData":{"continuation":"%d.1"}}]}}`, s, s, s)
+			}
+			sb.WriteString(`]}}}`)
+			_, _ = w.Write([]byte(sb.String()))
+			return
+		}
+		var s, p int
+		_, _ = fmt.Sscanf(token, "%d.%d", &s, &p)
+		next := ""
+		if p < pages {
+			next = fmt.Sprintf(`,"continuations":[{"nextContinuationData":{"continuation":"%d.%d"}}]`, s, p+1)
+		}
+		fmt.Fprintf(w, `{"continuationContents":{"musicShelfContinuation":{"contents":[{"musicResponsiveListItemRenderer":{"videoId":"s%d-%d","title":{"simpleText":"T"}}}]%s}}}`, s, p, next)
+	}))
+	defer server.Close()
+	c := NewClient(Options{APIKey: "k", BaseURL: server.URL})
+	for b.Loop() {
+		library, err := c.GetAllLibrary(context.Background())
+		if err != nil || len(library.Items) != shelves*(pages+1) {
+			b.Fatalf("library = %d items, %v", len(library.Items), err)
 		}
 	}
 }

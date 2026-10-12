@@ -593,7 +593,7 @@ func TestStreamFailedTellsAReadFailureFromACleanEnd(t *testing.T) {
 	if err := p.Play("http://example.invalid/reset"); err != nil {
 		t.Fatal(err)
 	}
-	waitForFailure(t, p)
+	waitForStop(t, p)
 	if !p.StreamFailed() {
 		t.Errorf("a failed read was not reported as a stream failure: %q", p.Failure())
 	}
@@ -607,7 +607,7 @@ func TestStreamFailedTellsAReadFailureFromACleanEnd(t *testing.T) {
 	if err := p.Play("http://example.invalid/clean"); err != nil {
 		t.Fatal(err)
 	}
-	waitForFailure(t, p)
+	waitForStop(t, p)
 	if p.Failure() != "" {
 		t.Errorf("a clean end was reported as a failure: %q", p.Failure())
 	}
@@ -616,9 +616,9 @@ func TestStreamFailedTellsAReadFailureFromACleanEnd(t *testing.T) {
 	}
 }
 
-// waitForFailure waits until the decode has stopped, and says so when it does
+// waitForStop waits until the decode has stopped, and says so when it does
 // not.
-func waitForFailure(t *testing.T, p *Player) {
+func waitForStop(t *testing.T, p *Player) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/elianiva/meiro/player"
 	"github.com/elianiva/meiro/youtube"
 )
 
@@ -86,6 +87,13 @@ func (fakeMusic) RoundTrip(request *http.Request) (*http.Response, error) {
 // are answered by fakeMusic.
 func newTestApp() *app {
 	a := newApp()
+	// No sound card: the player decodes with the real ffmpeg and listens
+	// to the result on the null device.
+	options := []player.Option{player.WithNullAudio()}
+	if ffmpeg, err := toolPath("ffmpeg"); err == nil {
+		options = append(options, player.WithFFmpeg(ffmpeg))
+	}
+	a.player = player.New(options...)
 	a.volume = a.settings.Volume
 	a.player.SetVolume(a.volume / 100)
 	a.run = func(work func()) { work() }
@@ -198,18 +206,6 @@ const suggestionsResponse = `{"contents":[{"searchSuggestionsSectionRenderer":{"
 	{"searchSuggestionRenderer":{"suggestion":{"runs":[{"text":"Yorushika songs"}]}}}
 ]}}]}`
 
-// failingMusic answers every request with a server error.
-type failingMusic struct{}
-
-func (failingMusic) RoundTrip(request *http.Request) (*http.Response, error) {
-	return &http.Response{
-		StatusCode: http.StatusInternalServerError,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader("down")),
-		Request:    request,
-	}, nil
-}
-
 // refusingMusic answers the account menu the way YouTube answers for a session
 // it has stopped accepting, until it is asked with the cookie the browser
 // holds.
@@ -288,149 +284,6 @@ const libraryResponse = `{"contents":{"musicCarouselShelfRenderer":{
 		}}
 	]
 }}}`
-
-// refusingEdits answers a playlist edit the way YouTube answers one it will not
-// make, and serves everything else as the fake YouTube does.
-type refusingEdits struct {
-	status string
-}
-
-func (r refusingEdits) RoundTrip(request *http.Request) (*http.Response, error) {
-	if strings.HasSuffix(request.URL.Path, "/browse/edit_playlist") {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"status":"` + r.status + `"}`)),
-			Request:    request,
-		}, nil
-	}
-	return fakeMusic{}.RoundTrip(request)
-}
-
-// noPlaylistLibrary serves a library that holds no playlist at all.
-type noPlaylistLibrary struct{}
-
-func (noPlaylistLibrary) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Path != "" && strings.HasSuffix(request.URL.Path, "/browse") {
-		body := ""
-		if request.Body != nil {
-			data, _ := io.ReadAll(request.Body)
-			request.Body = io.NopCloser(strings.NewReader(string(data)))
-			body = string(data)
-		}
-		if strings.Contains(body, "FEmusic_library_landing") {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(emptyLibraryResponse)),
-				Request:    request,
-			}, nil
-		}
-	}
-	return fakeMusic{}.RoundTrip(request)
-}
-
-// emptyLibraryResponse is a library landing page with nothing in it.
-const emptyLibraryResponse = `{"contents":{}}`
-
-// repeatingLibrary serves a library page that lists the same playlist in two
-// shelves, which is what a page holding both a shelf and a grid answers.
-type repeatingLibrary struct{}
-
-func (repeatingLibrary) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Path != "" && strings.HasSuffix(request.URL.Path, "/browse") {
-		body := ""
-		if request.Body != nil {
-			data, _ := io.ReadAll(request.Body)
-			request.Body = io.NopCloser(strings.NewReader(string(data)))
-			body = string(data)
-		}
-		if strings.Contains(body, "FEmusic_library_landing") {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(repeatingLibraryResponse)),
-				Request:    request,
-			}, nil
-		}
-	}
-	return fakeMusic{}.RoundTrip(request)
-}
-
-// repeatingLibraryResponse is a library landing page whose two shelves hold the
-// same two playlists, as the real one does.
-const repeatingLibraryResponse = `{"contents":{"sectionListRenderer":{"contents":[
-	{"gridRenderer":{"title":{"simpleText":"Playlists"},"items":[
-		{"gridPlaylistRenderer":{"playlistId":"PLhype","title":{"simpleText":"Hype"}}},
-		{"gridPlaylistRenderer":{"playlistId":"PLcar","title":{"simpleText":"car radio"}}}
-	]}},
-	{"gridRenderer":{"title":{"simpleText":"Playlists"},"items":[
-		{"gridPlaylistRenderer":{"playlistId":"PLhype","title":{"simpleText":"Hype"}}},
-		{"gridPlaylistRenderer":{"playlistId":"PLcar","title":{"simpleText":"car radio"}}}
-	]}}
-]}}}`
-
-// playlistCardHome is a home page whose shelf leads with a playlist card, and
-// a playlist read that offers a continuation page which fails: putting the
-// playlist on must not need it.
-type playlistCardHome struct{}
-
-func (playlistCardHome) RoundTrip(request *http.Request) (*http.Response, error) {
-	body := ""
-	if request.Body != nil {
-		data, _ := io.ReadAll(request.Body)
-		request.Body = io.NopCloser(strings.NewReader(string(data)))
-		body = string(data)
-	}
-	switch {
-	case strings.Contains(body, "MIX_MORE"):
-		// A playlist page holds a shelf of suggestions beside its tracks that
-		// never ends.
-		return &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{}`)),
-			Request:    request,
-		}, nil
-	case strings.Contains(body, "VLPLmixtape"):
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(mixtapeResponse)),
-			Request:    request,
-		}, nil
-	case strings.Contains(body, "FEmusic_home"):
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(homePlaylistCardResponse)),
-			Request:    request,
-		}, nil
-	}
-	return fakeMusic{}.RoundTrip(request)
-}
-
-// homePlaylistCardResponse is a home shelf holding a playlist card.
-const homePlaylistCardResponse = `{"contents":{"sectionListRenderer":{"contents":[
-	{"musicCarouselShelfRenderer":{
-		"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Made for you"}]}}},
-		"contents":[
-			{"musicTwoRowItemRenderer":{
-				"title":{"runs":[{"text":"Mixtape"}]},
-				"subtitle":{"runs":[{"text":"Playlist"}]},
-				"thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img.test/mix=w544-h544-l90-rj"}]}}},
-				"navigationEndpoint":{"browseEndpoint":{"browseId":"VLPLmixtape"}}
-			}}
-		]
-	}}
-]}}}`
-
-// mixtapeResponse is the first page of a playlist: its own tracks, and the
-// continuation of the shelf beside them.
-const mixtapeResponse = `{"contents":{"musicPlaylistShelfRenderer":{"contents":[
-	{"playlistVideoRenderer":{"videoId":"mix-1","title":{"simpleText":"Mix One"},"lengthText":{"simpleText":"3:00"}}},
-	{"playlistVideoRenderer":{"videoId":"mix-2","title":{"simpleText":"Mix Two"},"lengthText":{"simpleText":"4:00"}}}
-],"continuations":[{"nextContinuationData":{"continuation":"MIX_MORE"}}]}}}`
 
 // memoryStore is a cookie store held in memory.
 type memoryStore struct {

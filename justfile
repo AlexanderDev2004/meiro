@@ -31,11 +31,6 @@ run: (build host)
         *) "build/{{host}}/meiro" ;;
     esac
 
-# Render the app's pages to PNG files, for looking at them.
-snapshots dir="/tmp/meiro-shots":
-    mkdir -p {{dir}}
-    MEIRO_SNAPSHOTS={{dir}} go test -tags snapshot -run TestSnapshots .
-
 # Remove build output and the downloaded tools.
 clean:
     rm -rf build .mygo resources/darwin-* resources/linux-* resources/windows-*

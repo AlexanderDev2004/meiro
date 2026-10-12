@@ -453,14 +453,40 @@ func (a *app) setAudioCacheLimit(limit int) {
 // ytDlpStream asks yt-dlp for a direct audio URL, using the signed-in session
 // when YouTube requires one.
 func ytDlpStream(ctx context.Context, videoID, cookie string) (string, time.Duration, error) {
+	// An anonymous session does not need the JavaScript solver: the visionos
+	// client returns audio URLs that need no challenge. yt-dlp's default also
+	// asks the web client, which makes it run the solver under QuickJS for
+	// about seven seconds of CPU, so try visionos alone first and fall back to
+	// the full set if YouTube stops serving it.
+	if cookie == "" {
+		streamURL, total, err := ytDlpResolve(ctx, videoID, cookie, true)
+		if err == nil {
+			return streamURL, total, nil
+		}
+		if ctx.Err() != nil {
+			return "", 0, err
+		}
+		log.Printf("playback: js-less resolve failed video_id=%s, retrying with the solver: %v", videoID, err)
+	}
+	return ytDlpResolve(ctx, videoID, cookie, false)
+}
+
+func ytDlpResolve(ctx context.Context, videoID, cookie string, jsless bool) (string, time.Duration, error) {
 	path, err := toolPath("yt-dlp")
 	if err != nil {
 		return "", 0, errors.New("playing needs ffmpeg and yt-dlp on PATH")
 	}
-	jsRuntime, runtimeArgs := ytDlpJSRuntimeArgs()
+	jsRuntime := "none"
+	var runtimeArgs []string
+	extractorArgs := "youtube:skip=hls,dash"
+	if jsless {
+		extractorArgs += ";player_client=visionos"
+	} else {
+		jsRuntime, runtimeArgs = ytDlpJSRuntimeArgs()
+	}
 	// The player API already lists the audio formats; the HLS and DASH
 	// manifests only cost two more requests.
-	args := []string{"-f", "bestaudio", "-g", "--no-playlist", "--extractor-args", "youtube:skip=hls,dash"}
+	args := []string{"-f", "bestaudio", "-g", "--no-playlist", "--extractor-args", extractorArgs}
 	args = append(args, runtimeArgs...)
 	if cookie != "" {
 		cookieFile, err := ytDlpCookieFile(cookie)
@@ -498,10 +524,10 @@ func ytDlpStream(ctx context.Context, videoID, cookie string) (string, time.Dura
 
 // ytDlpJSRuntimeArgs names the JavaScript runtime yt-dlp should use to solve
 // YouTube's challenges, and the arguments that enable it. yt-dlp ships the
-// EJS solver scripts but needs a runtime to run them. The app ships QuickJS
-// because it is small and runs the scripts with restricted permissions. Any
-// runtime already on PATH is the fallback for a checkout that has not fetched
-// the bundled tools yet.
+// EJS solver scripts but needs a runtime to run them. A JIT runtime already
+// on PATH is several times cheaper in CPU than QuickJS, which only
+// interprets the solver. The app still ships QuickJS as the fallback so
+// playing works on a machine with neither.
 func ytDlpJSRuntimeArgs() (string, []string) {
 	jsRuntimeMu.Lock()
 	defer jsRuntimeMu.Unlock()
@@ -525,21 +551,13 @@ var (
 )
 
 func lookupJSRuntime() (string, []string) {
+	for _, name := range []string{"node", "bun"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return name, []string{"--js-runtimes", name + ":" + path}
+		}
+	}
 	if path, err := toolPath("qjs"); err == nil {
 		return "quickjs", []string{"--js-runtimes", "quickjs:" + path}
-	}
-	for _, runtime := range []struct {
-		name   string
-		binary string
-	}{
-		{name: "deno", binary: "deno"},
-		{name: "node", binary: "node"},
-		{name: "bun", binary: "bun"},
-	} {
-		path, err := exec.LookPath(runtime.binary)
-		if err == nil {
-			return runtime.name, []string{"--js-runtimes", runtime.name + ":" + path}
-		}
 	}
 	return "none", nil
 }

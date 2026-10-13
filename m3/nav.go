@@ -43,12 +43,17 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 	var event RailEvent
 	sc := Of(c).Scheme
 	rail := ui.Column(c).Key("m3-rail")
-	width := Animate(rail, "width", pick(spec.Expanded, RailExpanded, RailCollapsed), SpatialDefault)
-	railWidth := max(width, RailCollapsed-8)
+	// One progress drives the width and the layout, so they stay in step:
+	// the content swaps between its two layouts at the midpoint, while it is
+	// faded out, instead of jumping ahead of the width.
+	p := Animate(rail, "expand", pick(spec.Expanded, float32(1), 0), SpatialDefault)
+	railWidth := max(RailCollapsed+(RailExpanded-RailCollapsed)*p, RailCollapsed-8)
+	expanded := p > 0.5
+	fade := min(max(abs32(2*p-1)*2.5, 0), 1)
 	rail.Width(railWidth).Shrink(0).FillHeight().ClipX().PaddingY(12).Gap(4).
 		Background(sc.SurfaceContainerLow)
 	align := ui.Center
-	if spec.Expanded {
+	if expanded {
 		align = ui.Start
 	}
 	rail.AlignItems(align).Children(func() {
@@ -56,25 +61,26 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 			ui.Box(c).Height(spec.TopInset).FillWidth().Shrink(0).DragWindow()
 		}
 		menu := IconButton(c, IconButtonSpec{
-			Icon:  pick(spec.Expanded, IconMenuOpen, IconMenu),
-			Label: pick(spec.Expanded, "Collapse navigation", "Expand navigation"),
+			Icon:  pick(expanded, IconMenuOpen, IconMenu),
+			Label: pick(expanded, "Collapse navigation", "Expand navigation"),
 			Key:   "rail-menu",
 		})
-		if spec.Expanded {
+		if expanded {
 			menu.Margin(0, 0, 0, 16)
 		}
+		menu.Opacity(fade)
 		if menu.Clicked() {
 			event.Toggle = true
 		}
 		ui.Box(c).Height(16)
 		for _, item := range spec.Items {
-			if navItem(c, item, item.ID == spec.Selected, spec.Expanded, railWidth) {
+			if navItem(c, item, item.ID == spec.Selected, expanded, fade, railWidth) {
 				event.Item = item.ID
 			}
 		}
 		ui.Spacer(c)
 		for _, item := range spec.Footer {
-			if navItem(c, item, item.ID == spec.Selected, spec.Expanded, railWidth) {
+			if navItem(c, item, item.ID == spec.Selected, expanded, fade, railWidth) {
 				event.Item = item.ID
 			}
 		}
@@ -82,7 +88,7 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 	return event
 }
 
-func navItem(c *ui.Context, item NavItem, selected, expanded bool, railWidth float32) bool {
+func navItem(c *ui.Context, item NavItem, selected, expanded bool, fade, railWidth float32) bool {
 	sc := Of(c).Scheme
 	b := ui.ButtonBase(c.Key("nav-" + item.ID))
 	icon := item.Icon
@@ -94,6 +100,7 @@ func navItem(c *ui.Context, item NavItem, selected, expanded bool, railWidth flo
 		iconColor, labelColor = sc.OnSecondaryContainer, sc.OnSurface
 	}
 
+	b.Opacity(fade)
 	if expanded {
 		fill := ui.Transparent
 		if selected {
@@ -134,4 +141,11 @@ func navItem(c *ui.Context, item NavItem, selected, expanded bool, railWidth flo
 		LabelMedium.Style(ui.Text(c, item.Label), selected).TextColor(labelColor).FillWidth().TextAlign(ui.Center).SingleLine()
 	})
 	return b.Clicked()
+}
+
+func abs32(x float32) float32 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

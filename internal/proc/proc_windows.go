@@ -9,10 +9,13 @@ import (
 
 // hardenCommand makes cancellation kill the child's whole process tree.
 func hardenCommand(cmd *exec.Cmd) {
+	HideWindow(cmd)
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		return exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		kill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
+		HideWindow(kill)
+		return kill.Run()
 	}
 }

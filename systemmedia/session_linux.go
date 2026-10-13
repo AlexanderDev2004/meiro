@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"sync"
@@ -61,10 +62,16 @@ func New(controls Controls) (Session, error) {
 	root := &mprisRoot{}
 	api := &mprisPlayer{
 		controls: controls,
-		trackID: func() dbus.ObjectPath {
+		state: func() State {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			return trackPath(s.state)
+			return s.state
+		},
+		seek: func(position time.Duration) {
+			if controls.Seek == nil {
+				return
+			}
+			controls.Seek(position)
 		},
 	}
 	if err := conn.Export(root, objectPath, rootInterface); err != nil {
@@ -380,7 +387,8 @@ func (*mprisRoot) Quit() *dbus.Error  { return nil }
 
 type mprisPlayer struct {
 	controls Controls
-	trackID  func() dbus.ObjectPath
+	state    func() State
+	seek     func(time.Duration)
 }
 
 func (api *mprisPlayer) Next() *dbus.Error      { call(api.controls.Next); return nil }
@@ -390,17 +398,38 @@ func (api *mprisPlayer) PlayPause() *dbus.Error { call(api.controls.Toggle); ret
 func (api *mprisPlayer) Stop() *dbus.Error      { call(api.controls.Stop); return nil }
 func (api *mprisPlayer) Play() *dbus.Error      { call(api.controls.Play); return nil }
 func (api *mprisPlayer) SeekBy(offset int64) *dbus.Error {
-	if api.controls.Seek != nil {
-		api.controls.Seek(time.Duration(offset) * time.Microsecond)
-	}
+	state := api.state()
+	// Work in microseconds, the unit D-Bus uses, and bound the offset so the
+	// sum cannot overflow before it is clamped to the track.
+	const bound = 1 << 62
+	offset = max(-bound, min(bound, offset))
+	api.seek(clampPosition(state.Position.Microseconds()+offset, state.Duration))
 	return nil
 }
 
+// SetPosition follows the MPRIS rule that a position outside the track, or one
+// for a track that is no longer current, does nothing.
 func (api *mprisPlayer) SetPosition(trackID dbus.ObjectPath, position int64) *dbus.Error {
-	if trackID == api.trackID() && api.controls.Seek != nil {
-		api.controls.Seek(time.Duration(position) * time.Microsecond)
+	state := api.state()
+	if trackID != trackPath(state) || position < 0 || (state.Duration > 0 && position > state.Duration.Microseconds()) {
+		return nil
 	}
+	api.seek(clampPosition(position, state.Duration))
 	return nil
+}
+
+// clampPosition turns a position in microseconds into one inside the track.
+func clampPosition(micros int64, duration time.Duration) time.Duration {
+	if micros < 0 {
+		return 0
+	}
+	if limit := duration.Microseconds(); duration > 0 && micros > limit {
+		return duration
+	}
+	if micros > math.MaxInt64/int64(time.Microsecond) {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(micros) * time.Microsecond
 }
 
 func (*mprisPlayer) OpenUri(string) *dbus.Error {

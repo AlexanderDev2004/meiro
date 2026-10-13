@@ -126,17 +126,51 @@ func TestMPRISSessionPublishesStateAndForwardsCommands(t *testing.T) {
 		t.Error("no Seeked signal after a seek")
 	}
 
-	// Seek is relative: the offset the desktop sends reaches the app as it is.
-	if err := object.Call(playerInterface+".Seek", 0, int64(5*time.Second/time.Microsecond)).Err; err != nil {
+	// Seek is relative to the current position, and both Seek and SetPosition
+	// stay within the track.
+	for _, test := range []struct {
+		name   string
+		offset time.Duration
+		want   time.Duration
+	}{
+		{"positive offset", 5 * time.Second, 47 * time.Second},
+		{"negative offset", -50 * time.Second, 0},
+		{"upper clamp", time.Hour, state.Duration},
+	} {
+		if err := object.Call(playerInterface+".Seek", 0, int64(test.offset/time.Microsecond)).Err; err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if got := <-seeks; got != test.want {
+			t.Errorf("Seek %s = %v, want %v", test.name, got, test.want)
+		}
+	}
+	trackID := metadata["mpris:trackid"].Value().(dbus.ObjectPath)
+	for _, test := range []struct {
+		name     string
+		position time.Duration
+		want     time.Duration
+	}{
+		{"in range", 12 * time.Second, 12 * time.Second},
+	} {
+		if err := object.Call(playerInterface+".SetPosition", 0, trackID, int64(test.position/time.Microsecond)).Err; err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if got := <-seeks; got != test.want {
+			t.Errorf("SetPosition %s = %v, want %v", test.name, got, test.want)
+		}
+	}
+	// Positions outside the track are ignored, as the MPRIS spec says.
+	for _, position := range []time.Duration{-time.Second, 4 * time.Minute} {
+		if err := object.Call(playerInterface+".SetPosition", 0, trackID, int64(position/time.Microsecond)).Err; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Seek is a round trip behind these calls, so a forwarded seek would be queued by now.
+	if err := object.Call(playerInterface+".Seek", 0, int64(time.Second/time.Microsecond)).Err; err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case got := <-seeks:
-		if got != 5*time.Second {
-			t.Errorf("seek offset = %v, want 5s", got)
-		}
-	default:
-		t.Error("Seek was not forwarded to the app")
+	if got := <-seeks; got != 43*time.Second {
+		t.Errorf("seek after out-of-range SetPosition = %v, want 43s (earlier calls ignored)", got)
 	}
 }
 

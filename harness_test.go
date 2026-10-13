@@ -17,10 +17,13 @@ import (
 )
 
 // searches counts the search requests the fake YouTube has answered,
-// fakePageID records the channel a request acted as, and the playlist counters
-// count the library landings served and the playlists made.
+// searchesMore the continuations of them, searchAsked is the last search
+// request's body, fakePageID records the channel a request acted as, and the
+// playlist counters count the library landings served and the playlists made.
 var (
 	searches        atomic.Int32
+	searchesMore    atomic.Int32
+	searchAsked     atomic.Value
 	fakePageID      atomic.Value
 	libraryLoads    atomic.Int32
 	playlistCreates atomic.Int32
@@ -28,6 +31,12 @@ var (
 	// which endpoint, and the fields of its body.
 	lastWrite atomic.Value
 )
+
+// searchBody is the last search request the fake YouTube was asked for.
+func searchBody() string {
+	body, _ := searchAsked.Load().(string)
+	return body
+}
 
 // playlistWrite is one write the fake YouTube was asked to make.
 type playlistWrite struct {
@@ -74,9 +83,17 @@ func (fakeMusic) RoundTrip(request *http.Request) (*http.Response, error) {
 	case strings.HasSuffix(request.URL.Path, "/browse/edit_playlist"):
 		recordWrite(request.URL.Path, asked)
 		reply = editPlaylistResponse
+	case strings.Contains(asked, "search-more"):
+		searchesMore.Add(1)
+		reply = searchMoreResponse
 	case strings.Contains(asked, `"query"`):
 		searches.Add(1)
-		reply = searchResponse
+		searchAsked.Store(asked)
+		if strings.Contains(asked, `"params"`) {
+			reply = searchFilteredResponse
+		} else {
+			reply = searchResponse
+		}
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -190,15 +207,77 @@ const artistResponse = `{"header":{"musicImmersiveHeaderRenderer":{
 	}}
 ]}}}`
 
-const searchResponse = `{"contents":{"musicShelfRenderer":{"contents":[
-	{"musicResponsiveListItemRenderer":{
-		"playlistItemData":{"videoId":"vid-4"},
+// searchResponse is a search page as YouTube Music answers one: the filters it
+// offers for the query, the card the results lead with, the rows of the
+// results, and the token of the page after them.
+const searchResponse = `{"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{
+	"header":{"chipCloudRenderer":{"chips":[
+		{"chipCloudChipRenderer":{"text":{"runs":[{"text":"Songs"}]},"navigationEndpoint":{"searchEndpoint":{"query":"yor","params":"EgWKAQIIAWoSEAUQAxAJ"}}}},
+		{"chipCloudChipRenderer":{"text":{"runs":[{"text":"Albums"}]},"navigationEndpoint":{"searchEndpoint":{"query":"yor","params":"EgWKAQIYAWoSEAUQAxAJ"}}}}
+	]}},
+	"contents":[
+		{"musicCardShelfRenderer":{
+			"title":{"runs":[{"text":"Yorushika","navigationEndpoint":{"browseEndpoint":{"browseId":"UCyorushika"}}}]},
+			"subtitle":{"runs":[{"text":"Artist"},{"text":" • "},{"text":"16M monthly audience"}]},
+			"thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img.test/yorushika=w544-h544-l90-rj"}]}}},
+			"contents":[{"musicResponsiveListItemRenderer":{
+				"playlistItemData":{"videoId":"vid-card"},
+				"flexColumns":[
+					{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Card Song"}]}}},
+					{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Song"},{"text":" • "},{"text":"Yorushika"}]}}}
+				]}}]
+		}},
+		{"musicShelfRenderer":{
+			"contents":[{"musicResponsiveListItemRenderer":{
+				"playlistItemData":{"videoId":"vid-4"},
+				"flexColumns":[
+					{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Search Result Song"}]}}},
+					{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Someone"},{"text":" • "},{"text":"2:20"}]}}}
+				]}}],
+			"continuations":[{"nextContinuationData":{"continuation":"search-more"}}]
+		}}
+	]}}}}]}}}`
+
+// searchFilteredResponse is a search narrowed to one of its filters: the chip
+// that clears them leads the row, and the results are the ones of the filter.
+const searchFilteredResponse = `{"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{
+	"header":{"chipCloudRenderer":{"chips":[
+		{"chipCloudChipRenderer":{"navigationEndpoint":{"searchEndpoint":{"query":"yor"}}}},
+		{"chipCloudChipRenderer":{"text":{"runs":[{"text":"Songs"}]},"navigationEndpoint":{"searchEndpoint":{"query":"yor","params":"EgWKAQIIAWoSEAUQAxAJ"}}}},
+		{"chipCloudChipRenderer":{"text":{"runs":[{"text":"Albums"}]},"navigationEndpoint":{"searchEndpoint":{"query":"yor","params":"EgWKAQIYAWoSEAUQAxAJ"}}}}
+	]}},
+	"contents":[
+		{"musicShelfRenderer":{"contents":[{"musicResponsiveListItemRenderer":{
+			"playlistItemData":{"videoId":"vid-5"},
+			"flexColumns":[
+				{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Filtered Song"}]}}},
+				{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Someone"},{"text":" • "},{"text":"1:11"}]}}}
+			]}}]}}
+	]}}}}]}}}`
+
+// searchMoreResponse is the page after the first: the rows a search adds as its
+// list reaches the end of what it has.
+const searchMoreResponse = `{"contents":{"musicShelfRenderer":{"contents":[{"musicResponsiveListItemRenderer":{
+	"playlistItemData":{"videoId":"vid-6"},
+	"flexColumns":[
+		{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Later Song"}]}}},
+		{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Someone"},{"text":" • "},{"text":"0:59"}]}}}
+	]}}]}}}`
+
+// suggestionsResponse is what a query being typed is answered with: the
+// completed queries, and the items the partial query already matches.
+const suggestionsResponse = `{"contents":[
+	{"searchSuggestionsSectionRenderer":{"contents":[
+		{"searchSuggestionRenderer":{"suggestion":{"runs":[{"text":"Yorushika"}]}}},
+		{"searchSuggestionRenderer":{"suggestion":{"runs":[{"text":"Yorushika songs"}]}}}
+	]}},
+	{"searchSuggestionsSectionRenderer":{"contents":[{"musicResponsiveListItemRenderer":{
+		"navigationEndpoint":{"browseEndpoint":{"browseId":"UCyorushika"}},
 		"flexColumns":[
-			{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Search Result Song"}]}}},
-			{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Someone"},{"text":" • "},{"text":"2:20"}]}}}
-		]
-	}}
-]}}}`
+			{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Yorushika"}]}}},
+			{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"16M monthly audience"}]}}}
+		]}}]}}
+]}`
 
 const recapResponse = `{"contents":{"musicCarouselShelfRenderer":{
 	"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Your recap"}]}}},
@@ -215,11 +294,6 @@ const accountsResponse = `{"accountSectionListRenderer":{"contents":[{"accountIt
 	{"accountItemRenderer":{"accountName":{"simpleText":"Main channel"},"channelId":"UC-main","isSelected":true,"hasChannel":true}},
 	{"accountItemRenderer":{"accountName":{"simpleText":"Brand channel"},"channelId":"UC-brand","hasChannel":true}}
 ]}}]}}`
-
-const suggestionsResponse = `{"contents":[{"searchSuggestionsSectionRenderer":{"contents":[
-	{"searchSuggestionRenderer":{"suggestion":{"runs":[{"text":"Yorushika"}]}}},
-	{"searchSuggestionRenderer":{"suggestion":{"runs":[{"text":"Yorushika songs"}]}}}
-]}}]}`
 
 // refusingMusic answers the account menu the way YouTube answers for a session
 // it has stopped accepting, until it is asked with the cookie the browser

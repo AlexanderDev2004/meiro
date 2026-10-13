@@ -2,32 +2,26 @@ package youtube
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
 )
 
-// SearchType limits search results to one music category. An empty value
-// searches all categories.
-type SearchType string
+// SearchFilter is one of the filters YouTube Music offers for a search: the
+// name it shows, and the parameters that search with it. The filter that
+// clears them all carries neither.
+type SearchFilter struct {
+	Label  string `json:"label,omitempty"`
+	Params string `json:"params,omitempty"`
+}
 
-const (
-	SearchAll       SearchType = ""
-	SearchSongs     SearchType = "song"
-	SearchVideos    SearchType = "video"
-	SearchAlbums    SearchType = "album"
-	SearchArtists   SearchType = "artist"
-	SearchPlaylists SearchType = "playlist"
-)
-
-// SearchOptions controls a music search.
+// SearchOptions controls a music search. Params is what one of the search's
+// own filters carries; an empty value searches every category.
 type SearchOptions struct {
-	Type SearchType
+	Params string
 }
 
 // MusicItem is the common subset of YouTube Music song, video, album, artist,
@@ -48,6 +42,19 @@ type MusicItem struct {
 type SearchResult struct {
 	Items             []MusicItem `json:"items"`
 	ContinuationToken string      `json:"continuationToken,omitempty"`
+	// TopResult is the card a search leads with, which opens a page or plays
+	// a video. Its zero value says the search has none.
+	TopResult MusicItem `json:"topResult,omitempty"`
+	// Filters are the categories the search can be narrowed to, in the order
+	// YouTube Music offers them for this query.
+	Filters []SearchFilter `json:"filters,omitempty"`
+}
+
+// SearchSuggestions is what YouTube Music offers for a query being typed: the
+// completed queries, and the items the query already matches.
+type SearchSuggestions struct {
+	Queries []string    `json:"queries"`
+	Items   []MusicItem `json:"items,omitempty"`
 }
 
 // BrowseResult represents a Music browse page such as an artist, album,
@@ -143,41 +150,24 @@ type UpNextOptions struct {
 	Continuation  string
 }
 
-// Search searches YouTube Music. Supported types are song, video, album,
-// artist, playlist, and the empty value for all categories.
+// Search searches YouTube Music. Params narrows the search to one of the
+// categories YouTube offers for it, as SearchResult.Filters gives them; without
+// any, every category is searched.
 func (c *Client) Search(ctx context.Context, query string, options SearchOptions) (*SearchResult, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, errors.New("youtube: search query is required")
 	}
 	payload := map[string]any{"query": query}
-	if options.Type != SearchAll {
-		params, err := musicSearchParams(options.Type)
-		if err != nil {
-			return nil, err
-		}
-		payload["params"] = url.QueryEscape(params)
+	if options.Params != "" {
+		// The parameters are a filter's own, as YouTube gave them with an
+		// earlier search of the same kind: they go back the way they came.
+		payload["params"] = options.Params
 	}
 	raw, err := c.execute(ctx, "search", payload)
 	if err != nil {
 		return nil, err
 	}
 	return c.newSearchResult(raw), nil
-}
-
-func musicSearchParams(kind SearchType) (string, error) {
-	field := map[SearchType]byte{
-		SearchSongs: 1, SearchVideos: 2, SearchAlbums: 3,
-		SearchArtists: 4, SearchPlaylists: 5,
-	}[kind]
-	if field == 0 {
-		return "", fmt.Errorf("youtube: unsupported music search type %q", kind)
-	}
-	// SearchFilter{filters:{musicSearchType:{<field>:true}}}; protobuf field 17
-	// of Filters holds the nested MusicSearchType message.
-	inner := []byte{field << 3, 1}
-	filters := append([]byte{0x8a, 0x01, byte(len(inner))}, inner...)
-	message := append([]byte{0x12, byte(len(filters))}, filters...)
-	return base64.StdEncoding.EncodeToString(message), nil
 }
 
 func (c *Client) GetHomeFeed(ctx context.Context) (*BrowseResult, error) {
@@ -472,7 +462,7 @@ func (c *Client) GetUpNext(ctx context.Context, options UpNextOptions) (*BrowseR
 
 // upNextResult reads a decoded /next response.
 func upNextResult(root any) *BrowseResult {
-	items, sections := browseParts(root, true)
+	items, sections, _ := browseParts(root, false)
 	return &BrowseResult{
 		Items: items, Sections: sections,
 		ContinuationToken: upNextContinuationToken(root),
@@ -600,9 +590,10 @@ func (c *Client) ContinueUpNext(ctx context.Context, options UpNextOptions, cont
 	return c.GetUpNext(ctx, options)
 }
 
-// GetSearchSuggestions returns the query completions YouTube Music offers for
-// a partial query, in the order it offers them.
-func (c *Client) GetSearchSuggestions(ctx context.Context, input string) ([]string, error) {
+// GetSearchSuggestions returns what YouTube Music offers for a query being
+// typed: the query completions, in the order it offers them, and the items the
+// partial query already matches.
+func (c *Client) GetSearchSuggestions(ctx context.Context, input string) (*SearchSuggestions, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("youtube: suggestion input is required")
 	}
@@ -610,13 +601,14 @@ func (c *Client) GetSearchSuggestions(ctx context.Context, input string) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	return searchSuggestions(raw), nil
+	root := decodeResponse(raw)
+	items, _, _ := browseParts(root, false)
+	return &SearchSuggestions{Queries: searchSuggestions(root), Items: items}, nil
 }
 
 // searchSuggestions reads the completed text of every suggestion renderer in a
 // suggestion response, in order and without repeats.
-func searchSuggestions(raw json.RawMessage) []string {
-	root := decodeResponse(raw)
+func searchSuggestions(root any) []string {
 	var suggestions []string
 	seen := make(map[string]struct{})
 	var walk func(any)
@@ -755,7 +747,7 @@ func (c *Client) newBrowseResult(raw json.RawMessage) *BrowseResult {
 // browseResult reads a decoded browse response into the page's items, sections
 // and continuation.
 func browseResult(root any) *BrowseResult {
-	items, sections := browseParts(root, true)
+	items, sections, _ := browseParts(root, false)
 	title, thumbnail := pageHeading(root)
 	return &BrowseResult{
 		Title: title, Thumbnail: thumbnail,
@@ -767,10 +759,52 @@ func browseResult(root any) *BrowseResult {
 // newSearchResult reads a search response, as newBrowseResult does a browse.
 func (c *Client) newSearchResult(raw json.RawMessage) *SearchResult {
 	root := decodeResponse(raw)
-	items, _ := browseParts(root, false)
+	items, _, top := browseParts(root, true)
 	return &SearchResult{
-		Items: items, ContinuationToken: continuationToken(root),
+		Items: items, TopResult: top, Filters: searchFilters(root),
+		ContinuationToken: continuationToken(root),
 	}
+}
+
+// searchFilters reads the filters a search response offers, in the order
+// YouTube Music shows them. The chip that clears them all has no parameters.
+func searchFilters(root any) []SearchFilter {
+	cloud := findRenderer(root, "chipCloudRenderer")
+	if cloud == nil {
+		return nil
+	}
+	chips, _ := cloud.get("chips").([]any)
+	filters := make([]SearchFilter, 0, len(chips))
+	for _, value := range chips {
+		chip, ok := value.(*jsonObject)
+		if !ok {
+			continue
+		}
+		renderer, ok := chip.get("chipCloudChipRenderer").(*jsonObject)
+		if !ok {
+			continue
+		}
+		filters = append(filters, SearchFilter{
+			Label:  rendererText(renderer.get("text")),
+			Params: searchEndpointParams(renderer),
+		})
+	}
+	return filters
+}
+
+// searchEndpointParams reads the parameters a chip searches with, which the
+// chip that clears the filters does without.
+func searchEndpointParams(renderer *jsonObject) string {
+	endpoint, ok := renderer.get("navigationEndpoint").(*jsonObject)
+	if !ok {
+		return ""
+	}
+	search, ok := endpoint.get("searchEndpoint").(*jsonObject)
+	if !ok {
+		return ""
+	}
+	params, _ := search.get("params").(string)
+	return params
 }
 
 type browseContinuation struct {
@@ -858,12 +892,15 @@ func continuationToken(root any) string {
 }
 
 // browseParts walks a response once, in document order, and returns the items
-// and sections it holds. Every item renderer is parsed once, whether it sits
-// inside a section or outside one, and a section's items are the ones it
-// itself listed.
-func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
+// it holds, the sections of a browse page, and the card a search leads with.
+// Every item renderer is parsed once, whether it sits inside a section or
+// outside one, and a section's items are the ones it itself listed. A search
+// has no shelves of its own: its items are the one list it shows, and the card
+// its results lead with is the heading over them, not a row among them.
+func browseParts(root any, search bool) ([]MusicItem, []MusicSection, MusicItem) {
 	var items []MusicItem
 	var sections []MusicSection
+	var top MusicItem
 	seen := make(map[itemIdentity]struct{})
 	var walk func(any, *sectionItems)
 	walk = func(value any, section *sectionItems) {
@@ -874,7 +911,7 @@ func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 			}
 		case *jsonObject:
 			for _, member := range node.members {
-				if section == nil && wantSections && isSectionRenderer(member.key) {
+				if section == nil && !search && isSectionRenderer(member.key) {
 					if renderer, ok := member.value.(*jsonObject); ok {
 						current := &sectionItems{seen: make(map[itemIdentity]struct{})}
 						walk(renderer, current)
@@ -886,9 +923,15 @@ func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 					}
 				}
 				if item, renderer, ok := parseMusicRenderer(member.key, member.value); ok {
-					appendMusicItem(&items, seen, item, renderer)
-					if section != nil {
-						appendMusicItem(&section.items, section.seen, item, renderer)
+					if search && member.key == "musicCardShelfRenderer" {
+						if top.Title == "" {
+							top = item
+						}
+					} else {
+						appendMusicItem(&items, seen, item, renderer)
+						if section != nil {
+							appendMusicItem(&section.items, section.seen, item, renderer)
+						}
 					}
 				}
 				walk(member.value, section)
@@ -896,7 +939,7 @@ func browseParts(root any, wantSections bool) ([]MusicItem, []MusicSection) {
 		}
 	}
 	walk(root, nil)
-	return items, sections
+	return items, sections, top
 }
 
 // sectionItems collects one section's items, which dedupe against each other
@@ -1057,36 +1100,58 @@ type itemIdentity struct {
 	videoID, browseID, playlistID, title, setVideoID string
 }
 
-// parseMusicCardShelf reads a search's top result. It carries its media in
-// the card itself, outside any list: the title run navigates to the video,
-// the artist's browse endpoint sits in the subtitle runs, and the length
-// trails the subtitle.
+// parseMusicCardShelf reads the card a search leads with. It carries its media
+// in the card itself, outside any list: the title run navigates to what the
+// card opens, the artist's browse endpoint sits in the subtitle runs, and the
+// length trails the subtitle.
 func parseMusicCardShelf(renderer *jsonObject) (MusicItem, bool) {
-	item := MusicItem{Kind: KindVideo}
+	item := MusicItem{Kind: KindMusicItem}
 	item.Title = rendererText(renderer.get("title"))
+	if item.Title == "" {
+		return MusicItem{}, false
+	}
 	item.Subtitle = rendererText(renderer.get("subtitle"))
 	if duration := trailingDuration(item.Subtitle); duration != "" {
 		item.Duration = duration
 		item.Subtitle = strings.TrimSuffix(item.Subtitle, " • "+duration)
 	}
-	item.VideoID = nestedString([]any{renderer.get("title"), renderer.get("onTap"), renderer.get("thumbnailOverlay")}, "videoId")
-	if item.VideoID == "" {
-		item.VideoID = rendererVideoID(renderer)
+	item.BrowseID, item.VideoID = cardTarget(renderer)
+	if item.VideoID != "" {
+		// A card of a song plays its video, and says so.
+		item.Kind = KindVideo
 	}
-	item.BrowseID = cardArtistBrowseID(renderer)
+	if item.VideoID != "" {
+		item.ID = item.VideoID
+	} else {
+		item.ID = item.BrowseID
+	}
 	item.Thumbnail = rendererThumbnail(renderer.get("thumbnail"))
 	if item.Thumbnail == "" {
 		item.Thumbnail = rendererThumbnail(renderer)
 	}
-	if item.VideoID != "" {
-		item.ID = item.VideoID
-	} else if item.BrowseID != "" {
-		item.ID = item.BrowseID
-	}
-	if item.VideoID == "" || item.Title == "" {
-		return MusicItem{}, false
-	}
 	return item, true
+}
+
+// cardTarget reads what a card opens from the title it shows and from the card
+// itself: navigationID names the page, and the video is what the card plays. A
+// card that names neither is one of a song, whose artist — named in the
+// subtitle — is the page its menu can open.
+func cardTarget(renderer *jsonObject) (browseID, videoID string) {
+	for _, value := range []any{renderer.get("title"), renderer.get("onTap")} {
+		if browseID == "" {
+			browseID = navigationID(value)
+		}
+		if videoID == "" {
+			videoID = nestedString(value, "videoId")
+		}
+	}
+	if browseID == "" && videoID == "" {
+		videoID = rendererVideoID(renderer)
+	}
+	if browseID == "" && videoID == "" {
+		browseID = cardArtistBrowseID(renderer)
+	}
+	return browseID, videoID
 }
 
 // cardArtistBrowseID reads the artist a card's subtitle names. navigationID
@@ -1215,10 +1280,12 @@ func parseMusicItem(kind ItemKind, renderer *jsonObject) MusicItem {
 	}
 	item.PlaylistID, _ = renderer.get("playlistId").(string)
 	item.BrowseID = navigationID(renderer.get("navigationEndpoint"))
-	if kind == KindTrack || kind == KindVideo {
-		if artistID := rendererArtistBrowseID(renderer); artistID != "" {
-			item.BrowseID = artistID
-		}
+	if item.BrowseID == "" && (kind == KindTrack || kind == KindVideo) {
+		// A song or a video names no page of its own: the artist beside it
+		// is the page the row can open. A row that names its own page, as an
+		// album or a playlist in the results of a search does, keeps it,
+		// however the row credits the artist.
+		item.BrowseID = rendererArtistBrowseID(renderer)
 	}
 	switch {
 	case item.VideoID != "":

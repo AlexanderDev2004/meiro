@@ -11,12 +11,13 @@ type rowKind uint8
 
 const (
 	rowHero      rowKind = iota // the heading of an album, playlist or artist
+	rowTopResult                // the card a search's results lead with
 	rowHeading                  // the name of a section, with arrows for its shelf
 	rowCards                    // a shelf of cards that scrolls sideways
 	rowColumns                  // a shelf of songs in columns that scrolls sideways
 	rowGrid                     // one line of cards in a grid that wraps across the page
 	rowTrack                    // one song, album, artist or playlist in a column of rows
-	rowMore                     // the button that loads the next page
+	rowMore                     // the button that asks for the next page
 	rowLoading                  // the page is loading
 	rowError                    // the page failed
 	rowEmpty                    // the page has nothing on it
@@ -46,6 +47,8 @@ func (r row) key() any {
 	switch r.kind {
 	case rowTrack:
 		return itemKey("track", r.item) + "\x00" + r.shelf + "#" + strconv.Itoa(r.position)
+	case rowTopResult:
+		return itemKey("top", r.item)
 	case rowGrid:
 		return strconv.Itoa(int(r.kind)) + ":" + r.shelf + "#" + strconv.Itoa(r.position)
 	case rowCards, rowColumns, rowHeading:
@@ -74,6 +77,9 @@ type rowsKey struct {
 	err     string
 	more    string
 	moreErr string
+	// moreBusy says the next part of the page is on its way, which the list
+	// shows a spinner for.
+	moreBusy bool
 	// shelves folds the sections' titles and item counts into one number, and
 	// loose is how many items a page without sections holds.
 	shelves uint64
@@ -82,8 +88,10 @@ type rowsKey struct {
 	// columns is how many cards a line of the page's grid holds; it is zero
 	// on a page without one.
 	columns int
-	// submitted is the search the rows show the results of.
+	// submitted is the search the rows show the results of, and top the card
+	// those results lead with.
 	submitted string
+	top       youtube.MusicItem
 }
 
 // syncRows rebuilds the rows when the page's data changed since the last
@@ -94,16 +102,17 @@ func (a *app) syncRows() {
 	key := rowsKey{
 		path: a.path(), detail: a.page.detail,
 		loading: s.loading, partial: s.partial, err: s.err, more: s.more, moreErr: s.moreErr,
-		shelves: shelfShape(s.sections), loose: len(s.items),
+		moreBusy: a.pageMore.busy(),
+		shelves:  shelfShape(s.sections), loose: len(s.items),
 		columns: a.gridColumns(r),
 	}
 	if r.id == routeSearch {
-		key.submitted = a.search.submitted
+		key.submitted, key.top = a.search.submitted, a.search.top
 	}
 	if a.page.rows == nil || a.page.rowsDirty || key != a.page.rowsKey {
 		a.page.rowsKey, a.page.rowsDirty = key, false
 		// Each page owns its rows alone, so the new ones reuse their memory.
-		a.page.rows, a.page.playable = buildRows(a.page.rows[:0], a.page.playable[:0], r, s, a.page.detail, key)
+		a.page.rows, a.page.playable = buildRows(a.page.rows[:0], a.page.playable[:0], r, s, a.page.detail, key.top, key)
 	}
 }
 
@@ -123,8 +132,9 @@ func shelfShape(sections []youtube.MusicSection) uint64 {
 
 // buildRows flattens a loaded page into the rows its list shows, appended to
 // rows, and collects the songs that playing the page would queue, appended
-// to playable. It reads nothing but its arguments, which key summarises.
-func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState, heading detail, key rowsKey) ([]row, []youtube.MusicItem) {
+// to playable. It reads nothing but its arguments, which key summarises. top
+// is the card a search's results lead with, which no other page has.
+func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState, heading detail, top youtube.MusicItem, key rowsKey) ([]row, []youtube.MusicItem) {
 	if r.isDetail() {
 		rows = append(rows, row{kind: rowHero, title: heading.title, track: -1})
 	}
@@ -133,6 +143,9 @@ func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState,
 		return append(rows, row{kind: rowLoading, track: -1}), playable
 	case s.err != "":
 		return append(rows, row{kind: rowError, title: s.err, track: -1}), playable
+	}
+	if top.Title != "" {
+		rows = append(rows, row{kind: rowTopResult, item: top, track: -1})
 	}
 
 	// Songs on an album or playlist page carry no artwork of their own: the
@@ -215,12 +228,16 @@ func buildRows(rows []row, playable []youtube.MusicItem, r *route, s *pageState,
 	if s.partial {
 		rows = append(rows, row{kind: rowStreaming, track: -1})
 	}
-	if s.more != "" {
-		title := "Show more"
-		if s.moreErr != "" {
-			title = "Could not load more. Try again"
-		}
-		rows = append(rows, row{kind: rowMore, title: title, track: -1})
+	// A search asks for the next part of its results itself, as its list
+	// reaches the end of what it has, the way YouTube Music does. Every other
+	// page keeps the button that asks.
+	switch {
+	case s.moreErr != "":
+		rows = append(rows, row{kind: rowMore, title: "Could not load more. Try again", track: -1})
+	case key.moreBusy:
+		rows = append(rows, row{kind: rowStreaming, title: "more", track: -1})
+	case s.more != "" && r.id != routeSearch:
+		rows = append(rows, row{kind: rowMore, title: "Show more", track: -1})
 	}
 	if len(rows) == 0 || (len(rows) == 1 && rows[0].kind == rowHero) {
 		title := "Nothing here yet"

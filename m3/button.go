@@ -385,6 +385,24 @@ func Chip(c *ui.Context, label string, selected bool, key any) ui.Element {
 	return b
 }
 
+// IconChip builds a square chip of one icon, for a control that acts on the row
+// of chips it sits in, as the one that clears their filters does. It is drawn
+// as the chips that are not chosen are, so that the chosen one of the row stays
+// the loudest of them; its label names the action for assistive technology
+// rather than showing it.
+func IconChip(c *ui.Context, icon *ui.SVG, label string, key any) ui.Element {
+	sc := Of(c).Scheme
+	b := newButtonBase(c, key)
+	b.Size(32, 32).Justify(ui.Center).AlignItems(ui.Center).Shrink(0).Radius(Small).
+		Background(StateFill(ui.Transparent, sc.OnSurfaceVariant, b.Hovered(), b.Pressed(), b.FocusVisible())).
+		TextColor(sc.OnSurfaceVariant).Cursor(ui.CursorPointer).Transition(Fade(EffectsFast)).Label(label)
+	b.Border(1, sc.OutlineVariant)
+	b.Children(func() {
+		ui.Icon(c, icon).FontSize(18).TextColor(sc.OnSurfaceVariant)
+	})
+	return b
+}
+
 // ButtonGroup builds a connected button group: a row of toggle buttons that
 // share one choice. The selected button rounds into a pill while its
 // neighbours square their inner corners, so the choice reads in shape first.

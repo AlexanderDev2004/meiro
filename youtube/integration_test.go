@@ -43,7 +43,7 @@ func TestClientSessionAgainstFakeInnerTube(t *testing.T) {
 		t.Fatalf("home = %#v", home)
 	}
 
-	found, err := client.Search(ctx, "ambient", SearchOptions{Type: SearchSongs})
+	found, err := client.Search(ctx, "ambient", SearchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

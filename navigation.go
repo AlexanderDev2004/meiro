@@ -117,10 +117,12 @@ func (a *app) onNavigate() {
 	if r.open != nil {
 		r.open(a)
 	}
+	// The suggestions follow the text being typed, wherever the user is: a
+	// navigation closes the panel they open, and the search page focuses the
+	// bar only when it has no results to show.
+	a.cancelSuggestions()
 	if r.id == routeSearch {
 		a.focusSearch = a.search.submitted == ""
-	} else {
-		a.cancelSuggestions()
 	}
 	if page, ok := a.pages.Get(location); ok && (r.id == routeSearch || page.fresh(time.Now())) {
 		a.page = page
@@ -288,7 +290,7 @@ func (a *app) loadMore() {
 // retry loads the page shown again.
 func (a *app) retry() {
 	if r, _ := a.route(); r.id == routeSearch {
-		a.runSearch(a.search.submitted)
+		a.runSearch(a.search.submitted, a.search.params)
 		return
 	}
 	a.reloadPage()

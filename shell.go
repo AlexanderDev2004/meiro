@@ -179,8 +179,9 @@ func (a *app) clearance() float32 {
 	return playerHeight + playerGutter*2
 }
 
-// topBar names the page, with a way back on the pages a click opened, and
-// the account at its end. It drags the window.
+// topBar names the page, with a way back on the pages a click opened, the
+// search every page runs from, and the account at its end. It drags the
+// window.
 func (a *app) topBar(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	r, _ := a.route()
@@ -189,7 +190,7 @@ func (a *app) topBar(c *ui.Context) {
 	if back {
 		padding -= 8
 	}
-	topbar := ui.Row(c).Height(76).PaddingX(padding).Gap(8).AlignItems(ui.Center).Shrink(0).DragWindow()
+	topbar := ui.Row(c).Height(76).PaddingX(padding).Gap(16).AlignItems(ui.Center).Shrink(0).DragWindow()
 	if back {
 		// A page with a hero carries its wash up behind the bar.
 		topbar.Background(sc.PrimaryContainer.Mix(sc.Surface, 0.45))
@@ -206,6 +207,8 @@ func (a *app) topBar(c *ui.Context) {
 		}
 		m3.EmphasizedText(c, m3.HeadlineMedium, title).SingleLine().TextColor(sc.OnSurface)
 		ui.Spacer(c)
+		bar := a.searchBar(c)
+		a.searchSuggestions(c, bar)
 		a.accountButton(c)
 	})
 }

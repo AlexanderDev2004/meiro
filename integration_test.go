@@ -68,13 +68,16 @@ func TestSearchFlow(t *testing.T) {
 	tt := ui.NewTester(a.view, 1000, 700)
 	searches.Store(0)
 
-	if err := tt.Click("Search songs, albums, artists"); err != nil {
+	if err := tt.Click(searchPlaceholder); err != nil {
 		t.Fatal(err)
 	}
 	tt.Type("yor")
 	tt.Frame()
 	if !tt.HasText("Yorushika songs") {
 		t.Fatalf("suggestions are missing: %q", tt.Texts())
+	}
+	if !tt.HasText("16M monthly audience") {
+		t.Fatalf("the items the query matches are missing: %q", tt.Texts())
 	}
 	if searches.Load() != 0 {
 		t.Fatal("typing ran a search")
@@ -88,6 +91,123 @@ func TestSearchFlow(t *testing.T) {
 	}
 	if len(a.settings.Recent) == 0 || a.settings.Recent[0] != "Yorushika songs" {
 		t.Errorf("the search was not remembered: %v", a.settings.Recent)
+	}
+
+	// The items the query matches are chosen the same way: the panel opens
+	// what it names.
+	if err := tt.Click(searchPlaceholder); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("yor")
+	tt.Frame()
+	if err := tt.Click("16M monthly audience"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !strings.HasPrefix(a.path(), "/artist/UCyorushika") {
+		t.Fatalf("choosing an item opened %q", a.path())
+	}
+}
+
+// The search field is in the top bar of every page, and submitting it there
+// shows the search page with what it ran.
+func TestSearchingFromAnotherPage(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/settings")
+	tt := ui.NewTester(a.view, 1000, 700)
+	searches.Store(0)
+
+	if err := tt.Click(searchPlaceholder); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("yorushika")
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if r, _ := a.route(); r.id != routeSearch {
+		t.Fatalf("a search from settings left the app on %q", a.path())
+	}
+	if !tt.HasText("Search Result Song") || searches.Load() != 1 {
+		t.Fatalf("the search did not run: %q", tt.Texts())
+	}
+	if a.search.query != "yorushika" {
+		t.Errorf("the field reads %q", a.search.query)
+	}
+}
+
+// A search shows the filters YouTube offers for it, without one of the app's
+// own, and each one searches the query again with the parameters it carries.
+func TestSearchShowsYouTubesFilters(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/search")
+	a.runSearch("yor", "")
+	tt := ui.NewTester(a.view, 1000, 700)
+	searches.Store(0)
+	if !tt.HasText("Songs") || !tt.HasText("Albums") || tt.HasText("All") {
+		t.Fatalf("the filters are wrong: %q", tt.Texts())
+	}
+
+	if err := tt.Click("Songs"); err != nil {
+		t.Fatal(err)
+	}
+	if searches.Load() != 1 || !strings.Contains(searchBody(), "EgWKAQIIAWoSEAUQAxAJ") {
+		t.Fatalf("the filter did not search with its parameters: %q", searchBody())
+	}
+	if !tt.HasText("Filtered Song") || a.search.params != "EgWKAQIIAWoSEAUQAxAJ" {
+		t.Fatalf("the filter did not show its own results: %q", tt.Texts())
+	}
+
+	if err := tt.Click("Clear filters"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("Search Result Song") || a.search.params != "" || searches.Load() != 2 {
+		t.Fatalf("clearing the filter did not search again: %q", tt.Texts())
+	}
+}
+
+// The card a search leads with names what the search found, and selecting it
+// opens that page.
+func TestSearchLeadsWithItsTopResult(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/search")
+	a.runSearch("yor", "")
+	tt := ui.NewTester(a.view, 1000, 700)
+	tt.Frame()
+	if len(a.page.rows) == 0 || a.page.rows[0].kind != rowTopResult {
+		t.Fatalf("the results do not lead with a card: %#v", a.page.rows)
+	}
+	if !tt.HasText("16M monthly audience") {
+		t.Fatalf("the card shows no subtitle: %q", tt.Texts())
+	}
+	if err := tt.Click("Yorushika"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !strings.HasPrefix(a.path(), "/artist/") {
+		t.Fatalf("the card opened %q", a.path())
+	}
+}
+
+// A search shows the pages of its results itself as its list reaches the end of
+// what it has, rather than offering the button that asks.
+func TestSearchLoadsTheNextPageItself(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/search")
+	a.runSearch("yor", "")
+	searchesMore.Store(0)
+	// The list reaching the end of what it has is what asks for the page
+	// after it: the frame that lays the results out is enough.
+	tt := ui.NewTester(a.view, 1000, 700)
+	if searchesMore.Load() == 0 {
+		t.Fatal("the search did not ask for the page after its results")
+	}
+	tt.Frame()
+	if !tt.HasText("Later Song") {
+		t.Fatalf("the next page did not arrive: %q", tt.Texts())
+	}
+	for _, r := range a.page.rows {
+		if r.kind == rowMore {
+			t.Fatalf("a search offers the button that asks: %q", tt.Texts())
+		}
 	}
 }
 

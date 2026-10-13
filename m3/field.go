@@ -23,6 +23,9 @@ type SearchResult struct {
 	Submitted bool
 	Changed   bool
 	Cleared   bool
+	// Element is the bar, for anchoring what opens under it, as the
+	// suggestions do.
+	Element ui.Element
 }
 
 // SearchBar builds a pill-shaped search field. It never searches by itself:
@@ -69,5 +72,6 @@ func SearchBar(c *ui.Context, spec SearchSpec) SearchResult {
 			}
 		}
 	})
+	result.Element = bar
 	return result
 }

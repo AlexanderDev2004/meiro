@@ -17,8 +17,9 @@ half of the title.
 
 - **Browse.** View your Home feed and Explore, then open artist, album, and
   playlist pages. Sign in to view your Library.
-- **Search.** Search across all result types or filter by songs, albums,
-  artists, playlists, and videos. Meiro keeps your eight most recent searches.
+- **Search.** Search from the bar at the top of every page, and narrow the
+  results by any of the categories YouTube Music offers for the query. Meiro
+  keeps your eight most recent searches.
 - **Play.** Play tracks from feeds, search results, and playlists. Seek, adjust
   the volume, move to the previous or next track, shuffle, and repeat the
   current track or queue.

@@ -99,9 +99,11 @@ compare `a.router.Path()` against string literals. *(review)*
 
 - Building a view does no I/O and starts no work. Loads start from
   navigation (a route's `load` or `open`) and from handled clicks. See the
-  MyGo skill. The one exception is artwork: `thumbs.Bitmap` fetches the
-  pictures a frame draws, within its budget, and wakes the view when they
-  land.
+  MyGo skill. Two frames do ask for something themselves, because only the
+  frame knows the position they follow: artwork, where `thumbs.Bitmap`
+  fetches the pictures that frame draws, within its budget, and wakes the
+  view when they land, and a search, which asks for the next page of its
+  results when its list reports it has reached the end of what it has.
 - The page's rows are rebuilt only when `page.rowsDirty` is set or
   `rowsKey` changes. Set `rowsDirty` whenever you change what a page loaded.
 - Each `pageData` is owned by exactly one place, the page shown or the page

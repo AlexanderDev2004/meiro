@@ -704,7 +704,7 @@ func (a *app) playCollection(item youtube.MusicItem, key string, shuffle bool) {
 		a.play(item, []youtube.MusicItem{item})
 		return
 	}
-	if target.Kind != youtube.TargetAlbum && target.Kind != youtube.TargetPlaylist {
+	if target.Kind != youtube.TargetAlbum && target.Kind != youtube.TargetPlaylist && target.Kind != youtube.TargetArtist {
 		return
 	}
 	if a.isOpening(key) {
@@ -713,8 +713,14 @@ func (a *app) playCollection(item youtube.MusicItem, key string, shuffle bool) {
 	a.openingKey = key
 	client := a.client()
 	startTask(a, &a.opening, openTimeout, func(ctx context.Context) (*youtube.BrowseResult, error) {
-		if target.Kind == youtube.TargetAlbum {
+		switch target.Kind {
+		case youtube.TargetAlbum:
 			return client.GetAlbum(ctx, target.ID)
+		case youtube.TargetArtist:
+			return client.GetArtist(ctx, target.ID)
+		case youtube.TargetPlaylist, youtube.TargetTrack, youtube.TargetNone:
+			// The guard above leaves the playlist of the kinds that are not
+			// its own.
 		}
 		// The first page of a playlist holds the playlist itself. Draining
 		// it reads on into the shelf of suggestions beside it, which never

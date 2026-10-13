@@ -46,9 +46,19 @@ func (a *app) pageList(c *ui.Context) {
 	}).Grow(1).Padding(0, 0, a.clearance())
 	// The grid's lines depend on the width, which is known only once the list
 	// has been laid out: plan the lines again when it turns out different.
+	r, _ := a.route()
 	a.listWidth = list.Bounds().W
-	if r, _ := a.route(); a.gridColumns(r) != a.page.rowsKey.columns {
+	if a.gridColumns(r) != a.page.rowsKey.columns {
 		c.Invalidate()
+	}
+	// A search shows the pages of its results as its list reaches the end of
+	// what it has, the way YouTube Music does: where the list ended up is what
+	// asks for the next one. The pages that keep the button that asks leave
+	// this to the click.
+	if r.id == routeSearch && a.list.AtEnd() {
+		if s := a.pageState(); s.more != "" && s.moreErr == "" {
+			a.loadMore()
+		}
 	}
 }
 
@@ -58,6 +68,8 @@ func (a *app) rowView(c *ui.Context, rows []row, i int) {
 	switch r.kind {
 	case rowHero:
 		a.hero(c)
+	case rowTopResult:
+		a.topResult(c, r.item)
 	case rowHeading:
 		next := i+1 < len(rows) && (rows[i+1].kind == rowCards || rows[i+1].kind == rowColumns)
 		a.sectionHeading(c, r, next, i == 0)
@@ -562,6 +574,64 @@ func (a *app) queueMenuItems(c *ui.Context, index int, close func()) {
 	if m3.MenuItem(c, "Remove from queue", m3.IconClose).Clicked() {
 		a.removeFromQueue(index)
 		close()
+	}
+}
+
+// topResult is the card a search's results lead with: the artwork of what the
+// search found, its name, and what can be done with it. Selecting it opens the
+// page it names, or plays it; the play and shuffle buttons do that without
+// opening the page first.
+func (a *app) topResult(c *ui.Context, item youtube.MusicItem) {
+	sc := m3.Of(c).Scheme
+	target := item.Target()
+	key := "top-result"
+	card := ui.ButtonBase(c.Key(key))
+	card.Padding(8).Margin(0, pageGutter-8).Gap(20).Radius(m3.ExtraLarge).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(item.Title).
+		Background(m3.StateFill(ui.Transparent, sc.OnSurface, card.Hovered(), card.Pressed(), card.FocusVisible()))
+	played, shuffled := false, false
+	card.Children(func() {
+		m3.Art(c, a.thumbs.Bitmap(item.Thumbnail, 320), 132, artRadius(item, m3.LargeIncreased), func() {
+			if a.isOpening(key) {
+				ui.Box(c).Fill().Center().Background(sc.Scrim.Alpha(0.45)).Children(func() {
+					m3.LoadingIndicatorIn(c, 28, ui.RGB(255, 255, 255))
+				})
+			}
+		})
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			m3.EmphasizedText(c, m3.HeadlineSmall, item.Title).MaxLines(2).TextColor(sc.OnSurface)
+			if item.Subtitle != "" {
+				m3.Text(c, m3.BodyMedium, item.Subtitle).SingleLine().TextColor(sc.OnSurfaceVariant)
+			}
+			switch target.Kind {
+			case youtube.TargetTrack:
+				ui.Row(c).Padding(4, 0, 0).Children(func() {
+					if m3.Button(c, m3.ButtonSpec{Label: "Play", Icon: m3.IconPlay, Size: m3.Small40, Key: key + "-play"}).Clicked() {
+						played = true
+					}
+				})
+			case youtube.TargetAlbum, youtube.TargetPlaylist, youtube.TargetArtist:
+				ui.Row(c).Gap(8).Padding(4, 0, 0).Children(func() {
+					if m3.Button(c, m3.ButtonSpec{Label: "Play", Icon: m3.IconPlay, Size: m3.Small40, Key: key + "-play"}).Clicked() {
+						played = true
+					}
+					if m3.Button(c, m3.ButtonSpec{Label: "Shuffle", Icon: m3.IconShuffle, Kind: m3.Tonal, Size: m3.Small40, Key: key + "-shuffle"}).Clicked() {
+						shuffled = true
+					}
+				})
+			case youtube.TargetNone:
+			}
+		})
+	})
+	switch {
+	case played:
+		a.playCollection(item, key, false)
+	case shuffled:
+		a.playCollection(item, key, true)
+	case card.Clicked():
+		// The buttons are inside the card, which receives their presses too:
+		// the switch above is what keeps a press on one from opening the
+		// page under it.
+		a.activate(item, a.page.playable)
 	}
 }
 

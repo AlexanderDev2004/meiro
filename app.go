@@ -63,7 +63,7 @@ type app struct {
 	pages       *lru.Cache[string, *pageData]
 	details     *lru.Cache[string, detail]
 	carousels   *lru.Cache[string, *m3.CarouselState]
-	list        ui.ListState
+	list        *ui.ListState
 	listWidth   float32 // width the page's list had in the last frame
 	search      searchState
 	focusSearch bool
@@ -111,6 +111,7 @@ func newApp() *app {
 		player:     player.New(playerOptions()...),
 		settings:   settings.Defaults(),
 		page:       &pageData{},
+		list:       &ui.ListState{},
 		pages:      lru.New[string, *pageData](pageCacheLimit),
 		details:    lru.New[string, detail](pageCacheLimit),
 		carousels:  lru.New[string, *m3.CarouselState](pageCacheLimit * 4),

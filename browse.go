@@ -41,7 +41,7 @@ func (a *app) pageList(c *ui.Context) {
 		}
 		return rows[i].title
 	}
-	list := ui.List(c, &a.list, len(rows), func(i int) {
+	list := ui.List(c, a.list, len(rows), func(i int) {
 		a.rowView(c, rows, i)
 	}).Grow(1).Padding(0, 0, a.clearance())
 	// The grid's lines depend on the width, which is known only once the list

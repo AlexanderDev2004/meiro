@@ -134,7 +134,9 @@ func (a *app) onNavigate() {
 		a.page.detail, _ = a.details.Get(a.path())
 	}
 	// The list is shared by every page, so a new page starts at its top.
-	a.list = ui.ListState{}
+	// A new state, not a reset one: the frame of the old one is still read by
+	// the accessibility tree built from the last frame.
+	a.list = &ui.ListState{}
 	a.list.ScrollTo(0, ui.Start)
 	if r.load != nil && (r.needsAccount == nil || a.signedIn()) {
 		a.loadPage(r, id)

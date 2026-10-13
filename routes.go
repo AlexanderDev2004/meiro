@@ -104,8 +104,10 @@ func appRoutes() []route {
 		},
 		{
 			id: routeLibrary, pattern: "/library", title: "Library", heading: heading("Library"), nav: routeLibrary, source: "Your library", grid: true,
-			load: func(ctx context.Context, c *youtube.Client, _ string, partial func(*youtube.BrowseResult)) (*youtube.BrowseResult, error) {
-				return c.StreamLibrary(ctx, partial)
+			// The library shows once, whole: a grid that fills in as the rest
+			// arrives redraws every card and its artwork a second time.
+			load: func(ctx context.Context, c *youtube.Client, _ string, _ func(*youtube.BrowseResult)) (*youtube.BrowseResult, error) {
+				return c.StreamLibrary(ctx, nil)
 			},
 			needsAccount: &signInPrompt{m3.IconLibraryFilled, "Your library lives here", "Sign in to see your songs, albums and playlists."},
 		},

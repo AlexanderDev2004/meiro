@@ -171,14 +171,33 @@ func (a *app) gridColumns(r *route) int {
 	if width <= 0 {
 		width = 1000
 	}
-	inner := width - 2*(pageGutter-8)
-	return max(1, int((inner+cardGap)/(cardWidth+cardGap)))
+	return max(1, int((gridInner(width)+cardGap)/(cardWidth+cardGap)))
+}
+
+// gridInner is the width of a grid's lines inside a list of the given width.
+func gridInner(width float32) float32 {
+	return width - 2*(pageGutter-8)
+}
+
+// gridGap is the space between the cards of a line of columns cards: the
+// leftover width is shared out between them, so every line, the last one
+// too, ends flush with the page's edge as the shelves above it do.
+func gridGap(width float32, columns int) float32 {
+	if columns < 2 {
+		return cardGap
+	}
+	return max(cardGap, (gridInner(width)-float32(columns)*cardWidth)/float32(columns-1))
 }
 
 // cardGrid is one line of cards of a grid, which wraps onto as many lines as
 // the page is wide, so the whole of it is in view without scrolling sideways.
 func (a *app) cardGrid(c *ui.Context, r row) {
-	ui.Row(c).Gap(cardGap).Padding(0, pageGutter-8, cardGap).Children(func() {
+	width := a.listWidth
+	if width <= 0 {
+		width = 1000
+	}
+	gap := gridGap(width, a.page.rowsKey.columns)
+	ui.Row(c).Gap(gap).AlignItems(ui.Start).Padding(0, pageGutter-8, cardGap).Children(func() {
 		for i, item := range r.items {
 			a.card(c, item, r.queue, r.shelf, r.position+i)
 		}

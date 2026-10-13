@@ -99,12 +99,25 @@ cached() { # path expected
 	[[ "$(sha256 "$1")" == "$2" ]]
 }
 
+# download fetches url into path. On a terminal it shows curl's progress bar,
+# so a large file does not look like a hang; elsewhere (CI logs) it prints one
+# line, as a bar would only fill the log with redraws.
+download() { # url path
+	if [[ -t 2 ]]; then
+		echo "  downloading $(basename "$2")"
+		curl -fL --progress-bar -o "$2" "$1"
+	else
+		echo "  downloading $(basename "$2") from $1"
+		curl -fsSL -o "$2" "$1"
+	fi
+}
+
 echo "ffmpeg ${FFMPEG_VERSION} for ${platform}"
 archive="jellyfin-ffmpeg_${FFMPEG_VERSION}_portable_${ffmpeg_asset}-gpl.tar.xz"
 if cached "$out/bin/ffmpeg" "$ffmpeg_sha256"; then
 	echo "  already downloaded"
 else
-	curl -fsSL -o "$work/ffmpeg.tar.xz" "${ffmpeg_url}/${archive}"
+	download "${ffmpeg_url}/${archive}" "$work/ffmpeg.tar.xz"
 	verify "$work/ffmpeg.tar.xz" "$ffmpeg_sha256"
 	tar -xJf "$work/ffmpeg.tar.xz" -C "$work" ffmpeg
 	install -m 0755 "$work/ffmpeg" "$out/bin/ffmpeg"
@@ -124,7 +137,7 @@ expected="$(awk -v name="$ytdlp_asset" '$2 == name || $2 == "*" name { print $1 
 if [[ -x "$out/bin/yt-dlp" && -d "$out/bin/_internal" && "$(cat "$out/bin/.yt-dlp.sha256" 2>/dev/null)" == "$expected" ]]; then
 	echo "  already downloaded"
 else
-	curl -fsSL -o "$work/yt-dlp.zip" "${ytdlp_url}/${ytdlp_asset}"
+	download "${ytdlp_url}/${ytdlp_asset}" "$work/yt-dlp.zip"
 	verify "$work/yt-dlp.zip" "$expected"
 	unzip -q "$work/yt-dlp.zip" -d "$work/yt-dlp"
 	rm -rf "$out/bin/_internal" "$out/bin/yt-dlp"
@@ -158,7 +171,7 @@ echo "quickjs ${QUICKJS_VERSION} for ${platform}"
 if cached "$out/bin/qjs" "$quickjs_sha256"; then
 	echo "  already downloaded"
 else
-	curl -fsSL -o "$work/qjs" "${quickjs_url}/${quickjs_asset}"
+	download "${quickjs_url}/${quickjs_asset}" "$work/qjs"
 	verify "$work/qjs" "$quickjs_sha256"
 	install -m 0755 "$work/qjs" "$out/bin/qjs"
 fi

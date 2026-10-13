@@ -114,13 +114,16 @@ download() { # url path
 
 echo "ffmpeg ${FFMPEG_VERSION} for ${platform}"
 archive="jellyfin-ffmpeg_${FFMPEG_VERSION}_portable_${ffmpeg_asset}-gpl.tar.xz"
-if cached "$out/bin/ffmpeg" "$ffmpeg_sha256"; then
+# The tarball holds the binary, whose checksum is not the archive's, so the
+# archive's checksum is recorded to tell a later run that the download is current.
+if [[ -x "$out/bin/ffmpeg" && "$(cat "$out/bin/.ffmpeg.sha256" 2>/dev/null)" == "$ffmpeg_sha256" ]]; then
 	echo "  already downloaded"
 else
 	download "${ffmpeg_url}/${archive}" "$work/ffmpeg.tar.xz"
 	verify "$work/ffmpeg.tar.xz" "$ffmpeg_sha256"
 	tar -xJf "$work/ffmpeg.tar.xz" -C "$work" ffmpeg
 	install -m 0755 "$work/ffmpeg" "$out/bin/ffmpeg"
+	printf '%s\n' "$ffmpeg_sha256" > "$out/bin/.ffmpeg.sha256"
 fi
 if [[ ! -f "$out/licenses/ffmpeg-COPYING.GPLv3" ]]; then
 	curl -fsSL -o "$out/licenses/ffmpeg-COPYING.GPLv3" \

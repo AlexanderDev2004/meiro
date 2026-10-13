@@ -156,7 +156,6 @@ func (a *app) sheet(c *ui.Context) {
 			// were laid out and painted in full on every frame of the wave
 			// and of the slide into the player, which is most of the frame,
 			// to be covered at once.
-			a.nowPlaying.barShown = false
 			a.nowPlayingView(c)
 			return
 		}
@@ -167,8 +166,6 @@ func (a *app) sheet(c *ui.Context) {
 		})
 		if a.current.VideoID != "" {
 			a.playerBar(c)
-		} else {
-			a.nowPlaying.barShown = false
 		}
 	})
 }

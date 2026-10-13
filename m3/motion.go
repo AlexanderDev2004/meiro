@@ -34,9 +34,7 @@ func AnimateMotion(e ui.Element, key any, target float32, s Spring) float32 {
 // Rise is how far below its place, in DIPs, an element is while it comes in
 // or goes out: from when entering is true, which is its first frame, and
 // easing to to along the token's spring; 0 for an element in its place. The
-// caller moves the element by it with its layout, Top or Bottom. A transform
-// would do the same, but while any element of a frame is transformed the
-// toolkit draws the clip of every rounded artwork on the CPU.
+// caller moves the element by it with its layout, Top or Bottom.
 func Rise(e ui.Element, key any, from, to float32, entering bool, s Spring) float32 {
 	if entering {
 		e.Jump(key, from)

@@ -25,6 +25,7 @@ import (
 
 	"github.com/elianiva/meiro/internal/audio"
 	"github.com/elianiva/meiro/internal/cookies"
+	"github.com/elianiva/meiro/internal/diskcache"
 	"github.com/elianiva/meiro/internal/memprof"
 	"github.com/elianiva/meiro/internal/proc"
 	"github.com/elianiva/meiro/internal/settings"
@@ -75,6 +76,9 @@ func main() {
 		a.restoreAccount()
 		a.loadHistory()
 		a.startTicker()
+		// Browsing decodes and drops pictures in bursts, and the runtime
+		// keeps the freed memory for a while before it gives it back.
+		a.every(30*time.Second, debug.FreeOSMemory)
 		a.watchSession()
 		a.desktop.win.OnClosed(a.stopTicking)
 	})
@@ -110,6 +114,25 @@ func (a *app) setup() {
 	a.volume = a.settings.Volume
 	a.player.SetVolume(a.volume / 100)
 	a.openAudioCache()
+	a.openArtworkCache()
+}
+
+// artworkCacheLimit is how much downloaded artwork is kept on disk.
+const artworkCacheLimit = 256 << 20
+
+// openArtworkCache keeps downloaded artwork in the cache folder, so covers
+// that leave memory are read back instead of downloaded again.
+func (a *app) openArtworkCache() {
+	root, err := mygo.App.Path(mygo.PathCache)
+	if err != nil {
+		return
+	}
+	store, err := diskcache.Open(filepath.Join(root, "Meiro Artwork Cache"), artworkCacheLimit)
+	if err != nil {
+		log.Printf("setting up artwork cache: %v", err)
+		return
+	}
+	a.thumbs.UseStore(store)
 }
 
 // openAudioCache opens the audio cache where the settings say, or at the

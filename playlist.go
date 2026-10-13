@@ -339,7 +339,7 @@ func (a *app) playlistChoice(c *ui.Context, playlist youtube.MusicItem) {
 		Label("Add to " + playlist.Title).
 		Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
 	row.Children(func() {
-		m3.Art(c, a.thumbs.Bitmap(playlist.Thumbnail, 96), 40, m3.Small)
+		a.art(c, playlist.Thumbnail, 96, 40, m3.Small)
 		m3.Text(c, m3.BodyLarge, playlist.Title).Grow(1).SingleLine().TextColor(sc.OnSurface)
 	})
 	if row.Clicked() {

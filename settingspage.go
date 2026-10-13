@@ -267,7 +267,7 @@ func (a *app) accountCard(c *ui.Context) {
 	a.settingsCard(c, "Account", m3.IconPerson, func() {
 		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
 			if current := a.account.session; current != nil {
-				m3.Avatar(c, current.name(), a.thumbs.Bitmap(current.details.Thumbnail, 128), 56)
+				a.avatar(c, current.name(), current.details.Thumbnail, 128, 56)
 				ui.Column(c).Gap(2).Grow(1).MinWidth(0).Children(func() {
 					m3.EmphasizedText(c, m3.TitleMedium, current.name()).SingleLine()
 					if current.details.Email != "" {

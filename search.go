@@ -237,7 +237,7 @@ func (a *app) suggestionItem(c *ui.Context, item youtube.MusicItem, tracks []you
 		Cursor(ui.CursorPointer).Label(item.Title).
 		Background(m3.StateFill(ui.Transparent, sc.OnSurface, row.Hovered(), row.Pressed(), row.FocusVisible()))
 	row.Children(func() {
-		m3.Art(c, a.thumbs.Bitmap(item.Thumbnail, 128), 40, artRadius(item, m3.Small))
+		a.art(c, item.Thumbnail, 128, 40, artRadius(item, m3.Small))
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 			m3.Text(c, m3.BodyLarge, item.Title).SingleLine().TextColor(sc.OnSurface)
 			if item.Subtitle != "" {

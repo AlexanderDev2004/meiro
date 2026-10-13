@@ -78,7 +78,7 @@ func (a *app) accountButton(c *ui.Context) {
 	current := a.account.session
 	button.Children(func() {
 		if current != nil {
-			m3.Avatar(c, current.name(), a.thumbs.Bitmap(current.details.Thumbnail, 96), 36)
+			a.avatar(c, current.name(), current.details.Thumbnail, 96, 36)
 			return
 		}
 		ui.Box(c).Size(36, 36).Radius(m3.Full).Background(sc.SurfaceContainerHighest).Center().Children(func() {

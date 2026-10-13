@@ -282,7 +282,7 @@ func (a *app) playerBar(c *ui.Context) {
 			Cursor(ui.CursorPointer).Label("Open the player").
 			Background(m3.StateFill(ui.Transparent, sc.OnSurface, info.Hovered(), info.Pressed(), info.FocusVisible()))
 		info.Children(func() {
-			m3.Art(c, a.thumbs.Bitmap(a.current.Thumbnail, playerArt), 64, m3.Large, func() {
+			a.art(c, a.current.Thumbnail, playerArt, 64, m3.Large, func() {
 				if a.current.IsVideo() {
 					m3.VideoBadge(c, 64)
 				}
@@ -397,7 +397,7 @@ func (a *app) nowPlayingMain(c *ui.Context, windowHeight float32) {
 func (a *app) nowPlayingArtwork(c *ui.Context, imageSize int, artSize, radius float32) {
 	key := itemKey("now-playing-menu", a.current)
 	var menuButton ui.Element
-	artwork := m3.Art(c, a.thumbs.Bitmap(a.current.Thumbnail, imageSize), artSize, radius, func() {
+	artwork := a.art(c, a.current.Thumbnail, imageSize, artSize, radius, func() {
 		if a.current.IsVideo() {
 			m3.VideoBadge(c, artSize)
 		}

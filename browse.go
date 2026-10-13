@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/elianiva/meiro/internal/artwork"
 	"github.com/elianiva/meiro/m3"
 	"github.com/elianiva/meiro/youtube"
 )
@@ -258,6 +259,18 @@ func artRadius(item youtube.MusicItem, square float32) float32 {
 	return square
 }
 
+// art shows the artwork at url in a square of size points with rounded
+// corners. The picture is asked for at pixels across and already rounded, so
+// drawing it needs no clip; an overlay that covers the corners rounds itself.
+func (a *app) art(c *ui.Context, url string, pixels int, size, radius float32, overlays ...func()) ui.Element {
+	return m3.Art(c, a.thumbs.Bitmap(url, pixels, artwork.Corner(radius, size)), size, radius, overlays...)
+}
+
+// avatar is a person's picture on a disc of size points, rounded like art.
+func (a *app) avatar(c *ui.Context, name, url string, pixels int, size float32) {
+	m3.Avatar(c, name, a.thumbs.Bitmap(url, pixels, artwork.Corner(m3.Full, size)), size)
+}
+
 // card shows an album, a playlist, an artist or a song as artwork over its
 // name. A play button rises over the artwork under the pointer.
 func (a *app) card(c *ui.Context, item youtube.MusicItem, queue []youtube.MusicItem, list string, position int) {
@@ -275,11 +288,11 @@ func (a *app) card(c *ui.Context, item youtube.MusicItem, queue []youtube.MusicI
 	card.Children(func() {
 		radius := artRadius(item, m3.LargeIncreased)
 		opening := a.isOpening(key)
-		m3.Art(c, a.thumbs.Bitmap(item.Thumbnail, 320), cardArt, radius, func() {
+		a.art(c, item.Thumbnail, 256, cardArt, radius, func() {
 			if isNewPlaylist(item) {
 				// The tile has no artwork of its own: the plus covers the
 				// panel a missing one stands in with.
-				ui.Box(c).Size(cardArt, cardArt).Attach(ui.AnchorTopLeft, ui.AnchorTopLeft).
+				ui.Box(c).Size(cardArt, cardArt).Radius(radius).Attach(ui.AnchorTopLeft, ui.AnchorTopLeft).
 					Background(sc.SurfaceContainerHighest).Center().Children(func() {
 					ui.Icon(c, m3.IconAdd).FontSize(max(cardArt*0.4, 18)).TextColor(sc.OnSurfaceVariant)
 				})
@@ -455,9 +468,9 @@ func (a *app) songRow(c *ui.Context, item youtube.MusicItem, queue []youtube.Mus
 					}
 				})
 			} else {
-				m3.Art(c, a.thumbs.Bitmap(item.Thumbnail, 128), 48, artRadius(item, m3.Medium), func() {
+				a.art(c, item.Thumbnail, 128, 48, artRadius(item, m3.Medium), func() {
 					if isSong && (playing || hovered) {
-						ui.Box(c).Fill().Center().Background(sc.Scrim.Alpha(0.45)).Children(func() {
+						ui.Box(c).Fill().Radius(artRadius(item, m3.Medium)).Center().Background(sc.Scrim.Alpha(0.45)).Children(func() {
 							switch {
 							case playing && a.loading():
 								m3.LoadingIndicatorIn(c, 24, ui.RGB(255, 255, 255))
@@ -590,9 +603,9 @@ func (a *app) topResult(c *ui.Context, item youtube.MusicItem) {
 		Background(m3.StateFill(ui.Transparent, sc.OnSurface, card.Hovered(), card.Pressed(), card.FocusVisible()))
 	played, shuffled := false, false
 	card.Children(func() {
-		m3.Art(c, a.thumbs.Bitmap(item.Thumbnail, 320), 132, artRadius(item, m3.LargeIncreased), func() {
+		a.art(c, item.Thumbnail, 256, 132, artRadius(item, m3.LargeIncreased), func() {
 			if a.isOpening(key) {
-				ui.Box(c).Fill().Center().Background(sc.Scrim.Alpha(0.45)).Children(func() {
+				ui.Box(c).Fill().Radius(artRadius(item, m3.LargeIncreased)).Center().Background(sc.Scrim.Alpha(0.45)).Children(func() {
 					m3.LoadingIndicatorIn(c, 28, ui.RGB(255, 255, 255))
 				})
 			}
@@ -647,7 +660,7 @@ func (a *app) hero(c *ui.Context) {
 	}
 	wash := sc.PrimaryContainer.Mix(sc.Surface, 0.45)
 	ui.Row(c).Padding(8, pageGutter, 28).Gap(28).AlignItems(ui.End).Gradient(wash, sc.Surface, 180).Children(func() {
-		art := m3.Art(c, a.thumbs.Bitmap(d.art, 512), 220, artRadius)
+		art := a.art(c, d.art, 448, 220, artRadius)
 		m3.Elevation(c, art, 2)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
 			if label := heroLabel(r.target); label != "" {

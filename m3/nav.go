@@ -19,6 +19,22 @@ const (
 	RailExpanded  float32 = 236
 )
 
+// railInset is the space either side of an expanded destination: the
+// collapsed indicator's left edge, which the expanded pill grows from.
+// railIconInset then puts the icon on the collapsed icon's centre line.
+const (
+	railInset     float32 = 20
+	railIconInset float32 = 16
+)
+
+// railSpring moves the rail's width: critically damped, and slower than the
+// default spatial spring so the labels have frames to fade in and out.
+var railSpring = Spring{260, 1}
+
+// railFadeGain sets how much of the travel the labels are hidden for: they
+// are opaque once the rail is 1/railFadeGain of the way from the midpoint.
+const railFadeGain = 3
+
 // RailSpec describes a navigation rail.
 type RailSpec struct {
 	Items    []NavItem
@@ -38,18 +54,21 @@ type RailEvent struct {
 
 // Rail builds a navigation rail, collapsed to icons over labels or expanded to
 // icons beside labels. Its width follows a spring when it changes, and the
-// indicator behind the current destination grows out of its icon.
+// pill behind each icon grows with it.
 func Rail(c *ui.Context, spec RailSpec) RailEvent {
 	var event RailEvent
 	sc := Of(c).Scheme
 	rail := ui.Column(c).Key("m3-rail")
 	// One progress drives the width and the layout, so they stay in step:
-	// the content swaps between its two layouts at the midpoint, while it is
-	// faded out, instead of jumping ahead of the width.
-	p := Animate(rail, "expand", pick(spec.Expanded, float32(1), 0), SpatialDefault)
-	railWidth := max(RailCollapsed+(RailExpanded-RailCollapsed)*p, RailCollapsed-8)
+	// the labels swap between under and beside their icons at the midpoint,
+	// while they are faded out. The icons and pills never swap.
+	// The spring does not overshoot: a rail that rings past its width
+	// re-lays out the whole page on every frame of the wobble.
+	p := Animate(rail, "expand", pick(spec.Expanded, float32(1), 0), railSpring)
+	p = min(max(p, 0), 1)
+	railWidth := RailCollapsed + (RailExpanded-RailCollapsed)*p
 	expanded := p > 0.5
-	fade := min(max(abs32(2*p-1)*2.5, 0), 1)
+	fade := min(abs32(2*p-1)*railFadeGain, 1)
 	rail.Width(railWidth).Shrink(0).FillHeight().ClipX().PaddingY(12).Gap(4).
 		Background(sc.SurfaceContainerLow)
 	align := ui.Center
@@ -66,9 +85,8 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 			Key:   "rail-menu",
 		})
 		if expanded {
-			menu.Margin(0, 0, 0, 16)
+			menu.Margin(0, 0, 0, RailCollapsed/2-16)
 		}
-		menu.Opacity(fade)
 		if menu.Clicked() {
 			event.Toggle = true
 		}
@@ -88,6 +106,11 @@ func Rail(c *ui.Context, spec RailSpec) RailEvent {
 	return event
 }
 
+// navItem is one destination. Its icon and the pill behind it are the same
+// element in both layouts: the pill is as wide as the rail between its
+// insets, so it is the collapsed indicator at one end and the expanded row
+// at the other, and the icon stays where it is. Only the label changes
+// place, from under the icon to beside it, and it does that while faded out.
 func navItem(c *ui.Context, item NavItem, selected, expanded bool, fade, railWidth float32) bool {
 	sc := Of(c).Scheme
 	b := ui.ButtonBase(c.Key("nav-" + item.ID))
@@ -100,45 +123,30 @@ func navItem(c *ui.Context, item NavItem, selected, expanded bool, fade, railWid
 		iconColor, labelColor = sc.OnSecondaryContainer, sc.OnSurface
 	}
 
-	b.Opacity(fade)
-	if expanded {
-		fill := ui.Transparent
-		if selected {
-			fill = sc.SecondaryContainer
-		}
-		b.Width(railWidth-24).Height(56).PaddingX(16).Margin(0, 12).Gap(12).AlignItems(ui.Center).Radius(Full).
-			Background(StateFill(fill, sc.OnSurface, b.Hovered() && !selected, b.Pressed(), b.FocusVisible())).
-			TextColor(labelColor).Cursor(ui.CursorPointer).Transition(Fade(EffectsFast)).Label(item.Label)
-		b.Children(func() {
-			ui.Icon(c, icon).FontSize(24).TextColor(iconColor)
-			LabelLarge.Style(ui.Text(c, item.Label), selected).TextColor(labelColor).Grow(1).MinWidth(0).SingleLine()
-		})
-		return b.Clicked()
-	}
-
-	b.Column().Gap(4).AlignItems(ui.Center).PaddingY(6).Width(RailCollapsed).Cursor(ui.CursorPointer).Label(item.Label)
+	b.Column().Width(railWidth).Height(64).Justify(ui.Start).AlignItems(ui.Start).Cursor(ui.CursorPointer).Label(item.Label)
 	b.Children(func() {
-		hit := ui.Row(c).Size(56, 32).Radius(Full).Center()
-		hover := ui.Transparent
-		if b.Hovered() && !selected {
-			hover = sc.OnSurface.Alpha(StateHover)
-		} else if b.Pressed() {
-			hover = sc.OnSurface.Alpha(StatePress)
+		pill := ui.Row(c).Radius(Full).AlignItems(ui.Center).PaddingX(railIconInset).Gap(12)
+		target := float32(0)
+		if selected {
+			target = 1
 		}
-		hit.Background(hover)
-		hit.Children(func() {
-			indicator := ui.Row(c).Height(32).Radius(Full).Center()
-			target := float32(0)
-			if selected {
-				target = 1
-			}
-			p := Animate(indicator, "sel", target, SpatialDefault)
-			indicator.Width(32 + 24*max(p, 0)).Background(sc.SecondaryContainer.Alpha(min(max(p, 0), 1)))
-			indicator.Children(func() {
-				ui.Icon(c, icon).FontSize(24).TextColor(iconColor)
+		sel := min(max(Animate(pill, "sel", target, SpatialDefault), 0), 1)
+		// 32 collapsed and 40 expanded, around the icon's own centre line.
+		open := min(max((railWidth-RailCollapsed)/(RailExpanded-RailCollapsed), 0), 1)
+		height := 32 + 8*open
+		fill := sc.SecondaryContainer.Alpha(sel)
+		pill.Width(railWidth-2*railInset).Height(height).Margin(6-(height-32)/2, railInset, 0, railInset).Shrink(0).ClipX().
+			Background(StateFill(fill, sc.OnSurface, b.Hovered() && !selected, b.Pressed(), b.FocusVisible())).
+			Children(func() {
+				ui.Icon(c, icon).FontSize(24).TextColor(iconColor).Shrink(0)
+				if expanded {
+					LabelLarge.Style(ui.Text(c, item.Label), selected).TextColor(labelColor).Grow(1).MinWidth(0).SingleLine().Opacity(fade)
+				}
 			})
-		})
-		LabelMedium.Style(ui.Text(c, item.Label), selected).TextColor(labelColor).FillWidth().TextAlign(ui.Center).SingleLine()
+		if !expanded {
+			LabelMedium.Style(ui.Text(c, item.Label), selected).TextColor(labelColor).Width(RailCollapsed).TextAlign(ui.Center).SingleLine().
+				Margin(4, 0, 0, 0).Opacity(fade)
+		}
 	})
 	return b.Clicked()
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/elianiva/meiro/internal/audio"
 	"github.com/elianiva/meiro/internal/cookies"
+	"github.com/elianiva/meiro/internal/memprof"
 	"github.com/elianiva/meiro/internal/proc"
 	"github.com/elianiva/meiro/internal/settings"
 	"github.com/elianiva/meiro/m3"
@@ -38,6 +39,7 @@ func main() {
 	// before a collection; half as much costs a little time and saves tens of
 	// megabytes.
 	debug.SetGCPercent(50)
+	stopMemprof := memprof.Start(15 * time.Second)
 	proc.SweepTemp()
 	// A second launch hands its work to the running app instead of starting
 	// another player with its own audio.
@@ -79,6 +81,7 @@ func main() {
 	err := mygo.App.Run()
 	a.stopTicking()
 	a.shutdown()
+	stopMemprof()
 	if err != nil {
 		log.Fatal(err)
 	}

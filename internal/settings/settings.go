@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -60,11 +61,26 @@ type Settings struct {
 	ShowTray bool `json:"showTray"`
 	// OpenAtLogin starts Meiro when the user logs in.
 	OpenAtLogin bool `json:"openAtLogin"`
+	// WavyProgress draws the position slider as a travelling wave while the
+	// music plays. The wave repaints the player on every frame.
+	WavyProgress bool `json:"wavyProgress"`
 }
 
 // Defaults is what a first run starts with.
 func Defaults() Settings {
-	return Settings{Seed: "#6750a4", Mode: "system", Volume: 70, AutoPlay: true, CacheSongs: audio.DefaultLimit, NotifyTrack: true, ShowTray: true}
+	return Settings{
+		Seed: "#6750a4", Mode: "system", Volume: 70, AutoPlay: true, CacheSongs: audio.DefaultLimit, NotifyTrack: true, ShowTray: true,
+		WavyProgress: wavyProgressDefault(),
+	}
+}
+
+// wavyProgressDefault is off on macOS. The wave animates continuously, and
+// until MyGo can track damage (repaint only the region that changed) every
+// frame of it repaints the whole window, which on macOS costs an
+// unreasonable amount of memory. Remove this special case once MyGo has
+// damage tracking.
+func wavyProgressDefault() bool {
+	return runtime.GOOS != "darwin"
 }
 
 // clone returns a copy that shares no memory with s, for work that outlives

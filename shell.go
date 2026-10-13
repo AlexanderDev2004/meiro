@@ -1,6 +1,9 @@
 package main
 
 import (
+	"runtime"
+	"strconv"
+
 	"github.com/egoist/mygo/ui"
 
 	"github.com/elianiva/meiro/m3"
@@ -145,11 +148,12 @@ func (a *app) sheet(c *ui.Context) {
 	ui.Box(c).Absolute().Bottom(0).Left(0).Size(sheetCorner, sheetCorner).Background(tint)
 	ui.Box(c).Absolute().Bottom(0).Right(0).Size(sheetCorner, sheetCorner).Background(tint)
 	sheet := ui.Column(c).Key("sheet").Absolute().Top(sheetInset).Left(0).Right(sheetInset).Bottom(sheetInset).
-		Radius(m3.ExtraLarge).Clip()
+		Radius(m3.ExtraLarge)
 	if !a.nowPlaying.open {
 		sheet.Background(sc.Surface)
 	}
 	sheet.Children(func() {
+		defer sheetCorners(c, tint)
 		if a.nowPlaying.open {
 			// The player covers the sheet whole, and the page and the top
 			// bar with it. Only the player is built: the page and the bar
@@ -253,4 +257,66 @@ func (a *app) message(c *ui.Context, icon *ui.SVG, title, body, action string, r
 			}
 		}
 	})
+}
+
+// sheetCorners paints the window tint over the four corners of the sheet,
+// above whatever the page draws there, so the page seems to be cut by the
+// sheet's rounded edge without a clip, whose mask is as large as the window.
+func sheetCorners(c *ui.Context, tint ui.Color) {
+	n := float32(m3.ExtraLarge) * sheetReach
+	for i, corner := range sheetCornerShapes {
+		piece := ui.Icon(c, corner).FontSize(n).TextColor(tint).Absolute()
+		switch i {
+		case 0:
+			piece.Top(0).Left(0)
+		case 1:
+			piece.Top(0).Right(0)
+		case 2:
+			piece.Bottom(0).Left(0)
+		default:
+			piece.Bottom(0).Right(0)
+		}
+	}
+}
+
+// sheetReach is how far a corner of the sheet reaches along each edge, in
+// radii: 1 for a circular corner and 1.528665 for the continuous corner macOS
+// draws.
+var sheetReach = map[bool]float32{false: 1, true: 1.528665}[runtime.GOOS == "darwin"]
+
+// sheetCornerShapes are the four pieces that cover what lies outside the
+// rounded corners of the sheet: top left, top right, bottom left and bottom
+// right.
+var sheetCornerShapes = [4]*ui.SVG{
+	cornerShape(false, false), cornerShape(true, false), cornerShape(false, true), cornerShape(true, true),
+}
+
+// cornerShape draws the area outside one rounded corner: the corner's square
+// less the quarter of the sheet that stays. Its curve follows the sheet's, a
+// circle or the continuous corner's Bézier segments.
+func cornerShape(right, bottom bool) *ui.SVG {
+	reach := 100 * float64(sheetReach)
+	point := func(x, y float64) string {
+		if right {
+			x = reach - x
+		}
+		if bottom {
+			y = reach - y
+		}
+		return strconv.FormatFloat(x, 'f', 3, 64) + " " + strconv.FormatFloat(y, 'f', 3, 64)
+	}
+	path := "M" + point(0, 0)
+	if runtime.GOOS == "darwin" {
+		// The segments of the corner macOS draws, in units of its radius.
+		path += "L" + point(reach, 0) +
+			"C" + point(108.849323, 0) + " " + point(86.840694, 0) + " " + point(63.149399, 7.491139) +
+			"C" + point(37.282383, 16.905956) + " " + point(16.905956, 37.282383) + " " + point(7.491139, 63.149399) +
+			"C" + point(0, 86.840694) + " " + point(0, 108.849323) + " " + point(0, reach)
+	} else {
+		const k = 0.5522847498 // a quarter circle as one Bézier curve
+		path += "L" + point(100, 0) + "C" + point(100*(1-k), 0) + " " + point(0, 100*(1-k)) + " " + point(0, 100)
+	}
+	path += "Z"
+	size := strconv.FormatFloat(reach, 'f', 3, 64)
+	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ` + size + ` ` + size + `" fill="currentColor"><path d="` + path + `"/></svg>`))
 }

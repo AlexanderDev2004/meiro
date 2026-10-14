@@ -248,10 +248,10 @@ jobs:
           MEIRO_LASTFM_API_KEY: ${{ secrets.MEIRO_LASTFM_API_KEY }}
           MEIRO_LASTFM_SECRET: ${{ secrets.MEIRO_LASTFM_SECRET }}
         run: |
-          test -n "$MEIRO_LASTFM_API_KEY" && test -n "$MEIRO_LASTFM_SECRET" || {
+          if [ -z "$MEIRO_LASTFM_API_KEY" ] || [ -z "$MEIRO_LASTFM_SECRET" ]; then
             echo "The MEIRO_LASTFM_API_KEY and MEIRO_LASTFM_SECRET secrets are not both set; refusing to release an app that cannot connect to Last.fm."
             exit 1
-          }
+          fi
 
       # A universal macOS app is combined from both architecture directories,
       # so it takes both halves of the ffmpeg build.

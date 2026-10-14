@@ -216,18 +216,7 @@ func (c *Client) executeForClient(ctx context.Context, endpoint string, payload 
 	req.Header.Set("Referer", origin+"/")
 	req.Header.Set("X-YouTube-Client-Name", clientID)
 	req.Header.Set("X-YouTube-Client-Version", clientVersion)
-	// The visitor ID is an anonymous visit's; a signed-in session is its own.
-	if c.visitorData != "" && c.cookieAuth == nil {
-		req.Header.Set("X-Goog-Visitor-Id", c.visitorData)
-	}
-	if c.cookieAuth != nil {
-		req.Header.Set("Cookie", c.cookieAuth.cookie)
-		req.Header.Set("Authorization", c.cookieAuth.authorization(time.Now()))
-		req.Header.Set("X-Goog-Authuser", strconv.Itoa(c.cookieAuth.accountIndex))
-		if c.cookieAuth.onBehalfOfUser != "" {
-			req.Header.Set("X-Goog-PageId", c.cookieAuth.onBehalfOfUser)
-		}
-	}
+	c.setIdentity(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -249,6 +238,23 @@ func (c *Client) executeForClient(ctx context.Context, endpoint string, payload 
 		return nil, fmt.Errorf("youtube: decode %s response: invalid JSON", endpoint)
 	}
 	return json.RawMessage(responseBody), nil
+}
+
+// setIdentity adds who is asking: the visitor of an anonymous visit, or the
+// signed-in account.
+func (c *Client) setIdentity(req *http.Request) {
+	// The visitor ID is an anonymous visit's; a signed-in session is its own.
+	if c.visitorData != "" && c.cookieAuth == nil {
+		req.Header.Set("X-Goog-Visitor-Id", c.visitorData)
+	}
+	if c.cookieAuth != nil {
+		req.Header.Set("Cookie", c.cookieAuth.cookie)
+		req.Header.Set("Authorization", c.cookieAuth.authorization(time.Now()))
+		req.Header.Set("X-Goog-Authuser", strconv.Itoa(c.cookieAuth.accountIndex))
+		if c.cookieAuth.onBehalfOfUser != "" {
+			req.Header.Set("X-Goog-PageId", c.cookieAuth.onBehalfOfUser)
+		}
+	}
 }
 
 func isYouTubeURL(endpoint *url.URL) bool {

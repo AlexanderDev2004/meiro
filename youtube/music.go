@@ -448,9 +448,14 @@ func (c *Client) GetUpNext(ctx context.Context, options UpNextOptions) (*BrowseR
 		return nil, errors.New("youtube: video ID is required")
 	}
 	payload := map[string]any{"videoId": options.VideoID}
-	if options.PlaylistID != "" {
-		payload["playlistId"] = options.PlaylistID
+	playlistID := options.PlaylistID
+	if playlistID == "" {
+		// A track on its own is seeded with its own mix, which is what the
+		// automix link in the bare response points at: asking for it
+		// directly saves that first round trip.
+		playlistID = "RDAMVM" + options.VideoID
 	}
+	payload["playlistId"] = playlistID
 	if options.PlaylistIndex != nil {
 		payload["playlistIndex"] = *options.PlaylistIndex
 	}

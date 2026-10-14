@@ -253,6 +253,7 @@ func (a *app) afterEnter(item youtube.MusicItem, changed bool) {
 	a.ensureUpNext()
 	a.loadPanel()
 	if changed {
+		a.reportPlayback(item)
 		if a.settings.NotifyTrack {
 			a.desktop.notify(item)
 		}
@@ -528,6 +529,23 @@ func (a *app) warmNext() {
 		}
 		if cache.Warmable() {
 			cache.Add(next.VideoID, url)
+		}
+	})
+}
+
+// reportPlayback tells YouTube Music the signed-in account started item, so
+// it lands in the history that the recommendations are made from. Nothing on
+// screen depends on it, and a failure costs only a worse suggestion.
+func (a *app) reportPlayback(item youtube.MusicItem) {
+	if !a.signedIn() {
+		return
+	}
+	client := a.client()
+	a.run(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), upNextTimeout)
+		defer cancel()
+		if err := client.ReportPlayback(ctx, item.VideoID); err != nil {
+			log.Printf("playback: could not report video_id=%s: %v", item.VideoID, err)
 		}
 	})
 }

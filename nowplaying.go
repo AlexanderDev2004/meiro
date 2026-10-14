@@ -49,6 +49,9 @@ type nowPlayingState struct {
 	lyrics      lyricsState
 	related     relatedState
 	relatedList ui.ListState
+	// miniExpanded shows the side panel in the tray's mini player, which then
+	// loads what its tab shows as the full-screen player does.
+	miniExpanded bool
 }
 
 // lyricsState is the lyrics of the track playing, as far as they are loaded.
@@ -79,7 +82,7 @@ func (a *app) openPlayer(tab panelTab, queueOnly bool) {
 // Opening the panel, choosing a tab and starting a track call it; building the
 // view never does.
 func (a *app) loadPanel() {
-	if !a.nowPlaying.open {
+	if !a.nowPlaying.open && !a.nowPlaying.miniExpanded {
 		return
 	}
 	switch a.nowPlaying.tab {

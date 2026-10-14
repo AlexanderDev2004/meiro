@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 
 	"github.com/elianiva/meiro/youtube"
 )
@@ -25,6 +26,8 @@ type desktop struct {
 	// awake releases the sleep assertion while one is held.
 	awake func()
 	tray  *mygo.Tray
+	// mini is the tray's mini player while it is open.
+	mini mini
 	// trayShown is what the tray last showed, to skip identical updates.
 	trayShown trayState
 	// trayFailed is set when the system refused the tray, so it is not
@@ -47,6 +50,7 @@ func (d *desktop) update(fn func()) {
 		return
 	}
 	d.win.Update(fn)
+	d.invalidateMini()
 }
 
 // openPath opens a file or folder with the system's default application. It
@@ -62,6 +66,15 @@ func (d *desktop) openPath(path string) error {
 func (d *desktop) invalidate() {
 	if d != nil {
 		d.win.Invalidate()
+		d.invalidateMini()
+	}
+}
+
+// invalidateMini draws the mini player, when it is open, with what the
+// state now shows. It is safe from any goroutine.
+func (d *desktop) invalidateMini() {
+	if fl := d.mini.win.Load(); fl != nil {
+		fl.Invalidate()
 	}
 }
 
@@ -155,6 +168,8 @@ type trayState struct {
 // trayActions are what the tray's menu does.
 type trayActions struct {
 	toggle, next, show func()
+	// mini draws the mini player.
+	mini func(*ui.Context)
 }
 
 // setTray shows the tray icon with state while on is set, and removes it
@@ -166,6 +181,7 @@ func (d *desktop) setTray(on bool, state trayState, actions trayActions) {
 	}
 	if !on {
 		if d.tray != nil {
+			d.closeMini()
 			d.tray.Destroy()
 			d.tray, d.trayShown = nil, trayState{}
 		}
@@ -191,7 +207,7 @@ func (d *desktop) setTray(on bool, state trayState, actions trayActions) {
 			d.trayFailed = true
 			return
 		}
-		tray.OnClick(func() { d.update(actions.show) })
+		tray.OnClick(func() { d.update(func() { d.toggleMini(actions.mini) }) })
 		d.tray, d.trayShown = tray, state
 		return
 	}
@@ -222,6 +238,9 @@ func (d *desktop) trayMenu(state trayState, actions trayActions) *mygo.Menu {
 	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: state.tip, Disabled: true},
+		{Label: "Mini player", Click: func(*mygo.MenuItem, *mygo.Window) {
+			d.update(func() { d.toggleMini(actions.mini) })
+		}},
 		mygo.Separator(),
 		{Label: playLabel, Click: func(*mygo.MenuItem, *mygo.Window) { d.update(actions.toggle) }},
 		{Label: "Next track", Click: func(*mygo.MenuItem, *mygo.Window) { d.update(actions.next) }},
@@ -326,6 +345,7 @@ func (a *app) syncDesktop() {
 		toggle: a.togglePlay,
 		next:   a.advance,
 		show:   a.desktop.bringToFront,
+		mini:   a.miniPlayer,
 	})
 }
 

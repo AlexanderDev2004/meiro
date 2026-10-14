@@ -12,8 +12,8 @@ import (
 	"github.com/elianiva/meiro/youtube"
 )
 
-// recordHistory remembers a started track. It runs on the main thread from
-// start; the write goes off it.
+// recordHistory remembers a track once playback starts. It runs on the main
+// thread; the write goes off it.
 func (a *app) recordHistory(item youtube.MusicItem) {
 	if item.VideoID == "" {
 		return

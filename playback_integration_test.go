@@ -232,6 +232,9 @@ func TestAnUnplayableTrackSaysWhyAndRetries(t *testing.T) {
 	if a.playErr != "This track is no longer available." || a.loading() {
 		t.Fatalf("playErr=%q loading=%v", a.playErr, a.loading())
 	}
+	if len(a.history) != 0 {
+		t.Errorf("the failed track was recorded: %+v", a.history)
+	}
 	// Pressing play asks for the same track again.
 	delete(r.err, "bad")
 	a.togglePlay()
@@ -281,6 +284,11 @@ func TestAnUnplayableTrackIsSkipped(t *testing.T) {
 	if !strings.Contains(a.notice, "Skipped Track b") {
 		t.Errorf("notice = %q, want it to say what was skipped", a.notice)
 	}
+	for _, entry := range a.history {
+		if entry.VideoID == "b" {
+			t.Errorf("the skipped track was recorded: %+v", a.history)
+		}
+	}
 }
 
 // A run of failures, as a network that is down makes, stops at the limit with
@@ -300,6 +308,9 @@ func TestSkippingStopsAfterAFewFailuresInARow(t *testing.T) {
 	}
 	if r.asked("e") {
 		t.Error("the queue went on past the limit")
+	}
+	if len(a.history) != 0 {
+		t.Errorf("the unplayable tracks were recorded: %+v", a.history)
 	}
 	a.playVideoID("e") // chosen by the listener
 	if a.current.VideoID != "g" {
@@ -514,6 +525,9 @@ func TestPlayingATrackThroughToTheEnd(t *testing.T) {
 	}
 	if a.playErr != "" {
 		t.Errorf("playErr = %q", a.playErr)
+	}
+	if len(a.history) != 2 || a.history[0].VideoID != "a" || a.history[1].VideoID != "b" {
+		t.Errorf("history = %+v, want only the two tracks that started", a.history)
 	}
 
 	a.togglePlay() // pressing play on an ended track starts it again

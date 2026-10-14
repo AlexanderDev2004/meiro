@@ -221,7 +221,7 @@ func (a *app) startTrack(item youtube.MusicItem) {
 	// The old stream is stopped by the work that finds the new one: stopping
 	// kills ffmpeg and waits for the audio device, which is not for the main
 	// thread to do.
-	a.streamAudio(item, startAt)
+	a.streamAudio(item, startAt, changed)
 	a.afterEnter(item, changed)
 }
 
@@ -253,7 +253,6 @@ func (a *app) afterEnter(item youtube.MusicItem, changed bool) {
 	a.ensureUpNext()
 	a.loadPanel()
 	if changed {
-		a.recordHistory(item)
 		if a.settings.NotifyTrack {
 			a.desktop.notify(item)
 		}
@@ -276,7 +275,7 @@ type resolvedAudio struct {
 
 // streamAudio finds a track's audio off the main thread, in the cache or
 // with yt-dlp, and plays it.
-func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration) {
+func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed bool) {
 	cookie, cache := a.account.cookie(), a.currentAudioCache()
 	log.Printf("playback: resolving video_id=%s signed_in=%t", item.VideoID, cookie != "")
 	startTask(a, &a.stream, audio.ResolveTimeout, func(ctx context.Context) (resolvedAudio, error) {
@@ -304,6 +303,9 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration) {
 			return
 		}
 		log.Printf("playback: audio started video_id=%s from_cache=%t duration=%s", item.VideoID, found.fromCache, found.total)
+		if changed {
+			a.recordHistory(item)
+		}
 		a.skipped = 0
 		if !found.fromCache {
 			// The direct URL is already in hand, so the cache downloads it as
@@ -402,6 +404,9 @@ func (a *app) followed(tag string) {
 		a.currentAudioCache().Add(item.VideoID, found.url)
 	}
 	a.warmNext()
+	if changed {
+		a.recordHistory(item)
+	}
 	a.afterEnter(item, changed)
 	a.syncSystemMedia()
 }

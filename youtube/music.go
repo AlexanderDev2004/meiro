@@ -37,6 +37,15 @@ type MusicItem struct {
 	Kind          ItemKind `json:"kind,omitempty"`
 	Duration      string   `json:"duration,omitempty"`
 	Thumbnail     string   `json:"thumbnail,omitempty"`
+	// Like is whether the account has liked the track, when the page that
+	// held it said. It is not saved with the item: a like changes elsewhere.
+	Like LikeStatus `json:"-"`
+	// Library is whether the account has saved the album or the playlist, when
+	// the item's menu said, and nil when it did not. It is not saved with the
+	// item, for the same reason, and it is a pointer so that the items that
+	// have none, which are nearly all of them, stay small: a page's rows copy
+	// them. Nothing changes what it points to; a change gives the item another.
+	Library *LibraryState `json:"-"`
 }
 
 // SearchResult contains the parsed music items of a search.
@@ -68,6 +77,14 @@ type BrowseResult struct {
 	Items             []MusicItem    `json:"items"`
 	Sections          []MusicSection `json:"sections,omitempty"`
 	ContinuationToken string         `json:"continuationToken,omitempty"`
+	// Library is the save button of an album's or a playlist's header: whether
+	// the page is in the library, and what to write to change it. Its ID is
+	// empty for a page that offers none.
+	Library LibraryState `json:"-"`
+	// Subscription is the subscribe button of an artist's header: whether the
+	// account follows the artist, and the channel to write. Its ChannelID is
+	// empty for a page that offers none.
+	Subscription Subscription `json:"-"`
 	// QueuePlaylistID is the playlist panel's ID, used to continue radio queues.
 	QueuePlaylistID string `json:"queuePlaylistId,omitempty"`
 }
@@ -754,6 +771,8 @@ func browseResult(root any) *BrowseResult {
 		Title: title, Thumbnail: thumbnail,
 		Items: items, Sections: sections,
 		ContinuationToken: pageContinuationToken(root),
+		Library:           headerLibraryState(root),
+		Subscription:      headerSubscription(root),
 	}
 }
 
@@ -1281,6 +1300,8 @@ func parseMusicItem(kind ItemKind, renderer *jsonObject) MusicItem {
 	}
 	item.PlaylistID, _ = renderer.get("playlistId").(string)
 	item.PlaylistSetID = nestedString(renderer.get("playlistItemData"), "playlistSetVideoId")
+	item.Like = likeStatus(renderer)
+	item.Library = itemLibraryState(renderer)
 	item.BrowseID = navigationID(renderer.get("navigationEndpoint"))
 	if item.BrowseID == "" && (kind == KindTrack || kind == KindVideo) {
 		// A song or a video names no page of its own: the artist beside it

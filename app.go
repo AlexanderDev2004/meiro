@@ -80,7 +80,10 @@ type app struct {
 	search      searchState
 	focusSearch bool
 	menu        itemMenu
-	menuOpen    bool // the account menu
+	// writing holds the writes to a like, the library or a subscription that
+	// are out, by what they change, so that one is not asked for twice.
+	writing  map[string]bool
+	menuOpen bool // the account menu
 
 	// Dialogs.
 	crash         *crashState

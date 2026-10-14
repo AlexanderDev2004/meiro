@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +29,14 @@ var (
 	fakePageID      atomic.Value
 	libraryLoads    atomic.Int32
 	playlistCreates atomic.Int32
+	// likeWrites counts the like writes the fake has been asked for, and
+	// refuseWrites makes it answer them, and the library and subscription
+	// writes after them, as YouTube answers a request it rejects: with a 400.
+	likeWrites atomic.Int32
+	// subscribeWrites counts the subscription writes, refused the same way.
+	subscribeWrites atomic.Int32
+	refuseWrites    atomic.Bool
+	fakeLikeState   atomic.Value // what /next says of vid-3, as a string; "" says nothing
 	// lastWrite is the last playlist write the fake YouTube was asked for:
 	// which endpoint, and the fields of its body.
 	lastWrite atomic.Value
@@ -58,7 +68,28 @@ func (fakeMusic) RoundTrip(request *http.Request) (*http.Response, error) {
 		fakePageID.Store(id)
 	}
 	reply := homeResponse
+	status := http.StatusOK
 	switch {
+	case strings.HasSuffix(request.URL.Path, "/like/like"), strings.HasSuffix(request.URL.Path, "/like/removelike"):
+		likeWrites.Add(1)
+		recordWrite(request.URL.Path, asked)
+		reply = likeResponse
+		if refuseWrites.Load() {
+			reply, status = rejectedResponse, http.StatusBadRequest
+		} else if id := writtenPlaylist(); id != "" {
+			fakeLibrary.Store(id, strings.HasSuffix(request.URL.Path, "/like/like"))
+		}
+	case strings.HasSuffix(request.URL.Path, "/subscription/subscribe"), strings.HasSuffix(request.URL.Path, "/subscription/unsubscribe"):
+		subscribeWrites.Add(1)
+		recordWrite(request.URL.Path, asked)
+		reply = subscribeResponse
+		if refuseWrites.Load() {
+			reply, status = rejectedResponse, http.StatusBadRequest
+		} else {
+			fakeLibrary.Store(fakeArtist, strings.HasSuffix(request.URL.Path, "/subscription/subscribe"))
+		}
+	case strings.HasSuffix(request.URL.Path, "/next") && fakeLikes() != "" && strings.Contains(asked, "vid-3"):
+		reply = nextResponse(fakeLikes())
 	case strings.HasSuffix(request.URL.Path, "/account/accounts_list"):
 		reply = accountsResponse
 	case strings.HasSuffix(request.URL.Path, "/music/get_search_suggestions"):
@@ -68,18 +99,18 @@ func (fakeMusic) RoundTrip(request *http.Request) (*http.Response, error) {
 	case strings.Contains(asked, "FEmusic_listening_review"):
 		reply = recapResponse
 	case strings.Contains(asked, "VLPL_video"):
-		reply = playlistResponse
+		reply = playlistPage()
 	case strings.Contains(asked, "MPREb_test"):
-		reply = albumResponse
+		reply = albumPage()
 	case strings.Contains(asked, "FEmusic_library_landing"):
 		libraryLoads.Add(1)
-		reply = libraryResponse
+		reply = libraryPage()
 	case strings.HasSuffix(request.URL.Path, "/playlist/create"):
 		playlistCreates.Add(1)
 		recordWrite(request.URL.Path, asked)
 		reply = createPlaylistResponse
 	case strings.Contains(asked, "UCartist"):
-		reply = artistResponse
+		reply = artistPage()
 	case strings.HasSuffix(request.URL.Path, "/browse/edit_playlist"):
 		recordWrite(request.URL.Path, asked)
 		reply = editPlaylistResponse
@@ -96,11 +127,37 @@ func (fakeMusic) RoundTrip(request *http.Request) (*http.Response, error) {
 		}
 	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: status,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(reply)),
 		Request:    request,
 	}, nil
+}
+
+// fakeLikes is the like the fake's /next reports for vid-3, as YouTube names
+// it, or "".
+func fakeLikes() string {
+	status, _ := fakeLikeState.Load().(string)
+	return status
+}
+
+// likeResponse is what YouTube answers a like it took: the toast its own
+// client shows. Meiro reads nothing from it.
+const likeResponse = `{"responseContext":{},"actions":[{"addToToastAction":{"item":{"notificationActionRenderer":{"responseText":{"runs":[{"text":"Added to liked songs"}]}}}}}]}`
+
+// subscribeResponse is what YouTube answers a subscription it took.
+const subscribeResponse = `{"responseContext":{},"actions":[{"updateSubscribeButtonAction":{"subscribed":true}}]}`
+
+// rejectedResponse is what YouTube answers a write it rejects.
+const rejectedResponse = `{"error":{"code":400,"message":"Request contains an invalid argument.","status":"INVALID_ARGUMENT"}}`
+
+// nextResponse is what YouTube answers for the track vid-3 in the player: the
+// track itself, first in the panel, with the like button its menu carries.
+func nextResponse(like string) string {
+	return `{"contents":{"singleColumnMusicWatchNextResultsRenderer":{"tabbedRenderer":{"watchNextTabbedResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"musicQueueRenderer":{"content":{"playlistPanelRenderer":{"playlistId":"RDAMVM","contents":[
+		{"playlistPanelVideoRenderer":{"videoId":"vid-3","title":{"runs":[{"text":"Album Track One"}]},
+			"menu":{"menuRenderer":{"topLevelButtons":[{"likeButtonRenderer":{"target":{"videoId":"vid-3"},"likeStatus":"` + like + `"}}]}}}}
+	]}}}}}}]}}}}}`
 }
 
 // newTestApp builds an app whose work runs inline, and whose YouTube and
@@ -179,7 +236,12 @@ const exploreResponse = `{"contents":{"sectionListRenderer":{"contents":[
 	}}
 ]}}}`
 
-const albumResponse = `{"contents":{"musicShelfRenderer":{"contents":[
+// albumPage is an album as YouTube Music answers one: a header with the
+// button that saves it, and the rows of its tracks. The button says whether the
+// fake account has the album saved.
+func albumPage() string {
+	return `{"header":{"musicResponsiveHeaderRenderer":{"title":{"runs":[{"text":"Deep Focus"}]},"buttons":[` + libraryToggleButton(fakeAlbumPlaylist) + `]}},` +
+		`"contents":{"musicShelfRenderer":{"contents":[
 	{"musicResponsiveListItemRenderer":{
 		"playlistItemData":{"videoId":"vid-3"},
 		"flexColumns":[
@@ -188,15 +250,87 @@ const albumResponse = `{"contents":{"musicShelfRenderer":{"contents":[
 		]
 	}}
 ]}}}`
+}
 
-const playlistResponse = `{"contents":{"playlistVideoListRenderer":{"contents":[
+// playlistPage is a playlist the account does not own: a header with the
+// button that saves it, and its videos.
+func playlistPage() string {
+	return `{"header":{"musicResponsiveHeaderRenderer":{"title":{"runs":[{"text":"Road Trip"}]},"buttons":[` + libraryToggleButton(fakePlaylist) + `]}},` +
+		`"contents":{"playlistVideoListRenderer":{"contents":[
 	{"playlistVideoRenderer":{"videoId":"playlist-video","playlistItemData":{"playlistSetVideoId":"set-video-1"},"title":{"simpleText":"Playlist video"},"lengthText":{"simpleText":"5:21"}}}
 ]}}}`
+}
 
-// artistResponse carries the heading an artist page puts over its content.
-const artistResponse = `{"header":{"musicImmersiveHeaderRenderer":{
+// The playlists the fake's pages offer to save. An album is saved as its audio
+// playlist, which is not its browse ID.
+const (
+	fakeAlbumPlaylist = "OLAK5uy_test"
+	fakePlaylist      = "PL_video"
+)
+
+// fakeLibrary is what the fake account has saved or follows, by playlist ID
+// or channel ID. The fake's writes change it, and its pages read it, as
+// YouTube's do.
+var fakeLibrary sync.Map
+
+// resetFakes puts the fake YouTube back as a test found it: no write refused,
+// nothing counted, and the library holding the two playlists its landing page
+// starts with.
+func resetFakes() {
+	likeWrites.Store(0)
+	subscribeWrites.Store(0)
+	refuseWrites.Store(false)
+	fakeLikeState.Store("")
+	fakeLibrary.Clear()
+	fakeLibrary.Store("PLhype", true)
+	fakeLibrary.Store("PLcar", true)
+}
+
+func init() { resetFakes() }
+
+func fakeSaved(id string) bool {
+	saved, _ := fakeLibrary.Load(id)
+	return saved == true
+}
+
+// writtenPlaylist is the playlist the last write named as its target, or "".
+func writtenPlaylist() string {
+	target, _ := written().body["target"].(map[string]any)
+	id, _ := target["playlistId"].(string)
+	return id
+}
+
+// libraryToggleButton is the save button of a header, a toggle that likes the
+// playlist and says whether it is toggled.
+func libraryToggleButton(id string) string {
+	return fmt.Sprintf(`{"toggleButtonRenderer":{"isToggled":%t,
+		"defaultServiceEndpoint":{"likeEndpoint":{"status":"LIKE","target":{"playlistId":%q}}},
+		"toggledServiceEndpoint":{"likeEndpoint":{"status":"INDIFFERENT","target":{"playlistId":%q}}}}}`, fakeSaved(id), id, id)
+}
+
+// libraryToggleMenu is the menu of a card that can be saved: an item whose
+// default endpoint is the write the item offers now.
+func libraryToggleMenu(id string) string {
+	offered, other := "LIKE", "INDIFFERENT"
+	if fakeSaved(id) {
+		offered, other = other, offered
+	}
+	return fmt.Sprintf(`"menu":{"menuRenderer":{"items":[{"toggleMenuServiceItemRenderer":{
+		"defaultServiceEndpoint":{"likeEndpoint":{"status":%q,"target":{"playlistId":%q}}},
+		"toggledServiceEndpoint":{"likeEndpoint":{"status":%q,"target":{"playlistId":%q}}}}}]}}`, offered, id, other, id)
+}
+
+// fakeArtist is the channel of the artist the fake's artist page is about.
+const fakeArtist = "UCartist"
+
+// artistPage carries the heading an artist page puts over its content, with
+// the subscribe button in it, which says whether the fake account follows the
+// artist.
+func artistPage() string {
+	return `{"header":{"musicImmersiveHeaderRenderer":{
 	"title":{"runs":[{"text":"Aurora Vale"}]},
-	"thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img.example/aurora"}]}}}}},
+	"thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img.example/aurora"}]}}},
+	"subscriptionButton":{"subscribeButtonRenderer":{"subscribed":` + fmt.Sprint(fakeSaved(fakeArtist)) + `,"channelId":"` + fakeArtist + `","enabled":true}}}},
 	"contents":{"musicShelfRenderer":{"contents":[
 	{"musicResponsiveListItemRenderer":{
 		"playlistItemData":{"videoId":"vid-9"},
@@ -206,6 +340,7 @@ const artistResponse = `{"header":{"musicImmersiveHeaderRenderer":{
 		]
 	}}
 ]}}}`
+}
 
 // searchResponse is a search page as YouTube Music answers one: the filters it
 // offers for the query, the card the results lead with, the rows of the
@@ -345,8 +480,25 @@ func written() playlistWrite {
 
 // libraryResponse is a library landing page: the playlist a thumb fills, two
 // playlists, and an artist.
-const libraryResponse = `{"contents":{"musicCarouselShelfRenderer":{
-	"contents":[
+func libraryPage() string {
+	album := ""
+	if fakeSaved(fakeAlbumPlaylist) {
+		album = `{"musicTwoRowItemRenderer":{
+			"title":{"runs":[{"text":"Deep Focus"}]},
+			"subtitle":{"runs":[{"text":"Album"}]},
+			"navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_test"}},
+			` + libraryToggleMenu(fakeAlbumPlaylist) + `
+		}},`
+	}
+	if fakeSaved(fakeArtist) {
+		album += `{"musicTwoRowItemRenderer":{
+			"title":{"runs":[{"text":"Aurora Vale Trio"}]},
+			"subtitle":{"runs":[{"text":"Artist"}]},
+			"navigationEndpoint":{"browseEndpoint":{"browseId":"UCartist"}}
+		}},`
+	}
+	return `{"contents":{"musicCarouselShelfRenderer":{
+	"contents":[` + album + `
 		{"musicTwoRowItemRenderer":{
 			"title":{"runs":[{"text":"Liked Music"}]},
 			"subtitle":{"runs":[{"text":"Auto playlist"}]},
@@ -357,7 +509,8 @@ const libraryResponse = `{"contents":{"musicCarouselShelfRenderer":{
 			"title":{"runs":[{"text":"Hype"}]},
 			"subtitle":{"runs":[{"text":"Nuarth · 37 tracks"}]},
 			"thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img.test/hype=w544-h544-l90-rj"}]}}},
-			"navigationEndpoint":{"browseEndpoint":{"browseId":"VLPLhype"}}
+			"navigationEndpoint":{"browseEndpoint":{"browseId":"VLPLhype"}},
+			` + libraryToggleMenu("PLhype") + `
 		}},
 		{"musicTwoRowItemRenderer":{
 			"title":{"runs":[{"text":"car radio"}]},
@@ -373,6 +526,7 @@ const libraryResponse = `{"contents":{"musicCarouselShelfRenderer":{
 		}}
 	]
 }}}`
+}
 
 // memoryStore is a cookie store held in memory.
 type memoryStore struct {

@@ -415,6 +415,13 @@ func (a *app) cardMenu(c *ui.Context, anchor ui.Element, key string, item youtub
 			a.playCollection(item, key, true)
 			close()
 		}
+		if library := item.InLibrary(); a.canSave(library) {
+			label, icon := libraryLabel(library)
+			if m3.MenuItem(c, label, icon).Clicked() {
+				a.toggleLibrary(library, item.Title)
+				close()
+			}
+		}
 		if target.ID != "" && m3.MenuItem(c, "Copy link", m3.IconCopy).Clicked() {
 			c.WriteClipboard(youtube.BrowseURL(target.ID))
 			c.Toast("Link copied")
@@ -592,6 +599,13 @@ func (a *app) songMenu(c *ui.Context, anchor ui.Element, key string, item youtub
 				close()
 			}
 		}
+		if a.canLike(item) {
+			label, icon := likeLabel(item)
+			if m3.MenuItem(c, label, icon).Clicked() {
+				a.toggleLike(item)
+				close()
+			}
+		}
 		if item.VideoID != "" && m3.MenuItem(c, "Add to playlist", m3.IconLibrary).Clicked() {
 			a.openAddToPlaylist(item)
 			close()
@@ -718,6 +732,8 @@ func (a *app) hero(c *ui.Context) {
 				if m3.Button(c, m3.ButtonSpec{Label: "Shuffle", Icon: m3.IconShuffle, Kind: m3.Tonal, Size: m3.Medium56, Disabled: none, Key: "hero-shuffle"}).Clicked() {
 					a.shufflePage()
 				}
+				a.libraryButton(c)
+				a.subscribeButton(c)
 			})
 		})
 	})

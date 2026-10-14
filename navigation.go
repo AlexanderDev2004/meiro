@@ -51,11 +51,15 @@ type pageState struct {
 // heading, and the rows built from them. The page cache keeps it whole, so a
 // field added here is cached and restored with the rest.
 type pageData struct {
-	feed     pageState
-	detail   detail
-	loadedAt time.Time
-	rows     []row
-	playable []youtube.MusicItem
+	feed   pageState
+	detail detail
+	// library is whether an album or a playlist page is in the library.
+	library youtube.LibraryState
+	// subscription is whether an artist's page is followed.
+	subscription youtube.Subscription
+	loadedAt     time.Time
+	rows         []row
+	playable     []youtube.MusicItem
 	// rowsDirty marks the rows stale. A change of the page's data sets it,
 	// and the next frame rebuilds them; otherwise they are reused. rowsKey
 	// is the shape they were built from, so a change a caller did not mark
@@ -220,6 +224,12 @@ func (a *app) applyPage(p *pageData, r *route, path string, client *youtube.Clie
 			p.detail.art = result.Thumbnail
 		}
 		a.details.Put(path, p.detail)
+		if result.Library.ID != "" {
+			p.library = result.Library
+		}
+		if result.Subscription.ChannelID != "" {
+			p.subscription = result.Subscription
+		}
 	}
 	p.feed.sections = result.Sections
 	// Items are the page's songs, cards and rows all together, which its

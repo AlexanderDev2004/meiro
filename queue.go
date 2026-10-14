@@ -3,6 +3,7 @@ package main
 import (
 	"math/rand/v2"
 	"slices"
+	"time"
 
 	"github.com/elianiva/meiro/youtube"
 )
@@ -220,16 +221,43 @@ func (q *queue) regenerate() {
 	}
 }
 
+// sameSongTolerance is how far apart two uploads' lengths can be and still be
+// the same song: the music video and the audio upload of a track differ by a
+// second or so.
+const sameSongTolerance = 3 * time.Second
+
+// noteVersion records the title and length of a track, so that another upload
+// of the same song can be told from a different song.
+func noteVersion(versions map[string][]time.Duration, item youtube.MusicItem) {
+	if d := parseDuration(item.Duration); d > 0 && item.Title != "" {
+		versions[item.Title] = append(versions[item.Title], d)
+	}
+}
+
+// hasVersion reports whether the track is another upload of a song already
+// noted: the same title and nearly the same length.
+func hasVersion(versions map[string][]time.Duration, item youtube.MusicItem) bool {
+	d := parseDuration(item.Duration)
+	if d <= 0 {
+		return false
+	}
+	return slices.ContainsFunc(versions[item.Title], func(o time.Duration) bool {
+		return (d - o).Abs() <= sameSongTolerance
+	})
+}
+
 // appendGenerated adds the recommendations YouTube Music returned that the
 // queue does not already hold, keeping at most autoplayQueueLimit generated
 // tracks: played tracks are dropped first to make room, without touching
 // the one playing.
 func (q *queue) appendGenerated(items []youtube.MusicItem) {
 	seen := make(map[string]struct{}, len(q.items)+min(len(items), autoplayQueueLimit+1))
+	versions := make(map[string][]time.Duration, len(q.items))
 	for _, queued := range q.items {
 		if queued.VideoID != "" {
 			seen[queued.VideoID] = struct{}{}
 		}
+		noteVersion(versions, queued)
 	}
 	fresh := make([]youtube.MusicItem, 0, min(len(items), autoplayQueueLimit+1))
 	for _, item := range items {
@@ -240,6 +268,10 @@ func (q *queue) appendGenerated(items []youtube.MusicItem) {
 			continue
 		}
 		seen[item.VideoID] = struct{}{}
+		if hasVersion(versions, item) {
+			continue
+		}
+		noteVersion(versions, item)
 		fresh = append(fresh, item)
 		if len(fresh) > autoplayQueueLimit {
 			break

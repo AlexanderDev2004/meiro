@@ -176,3 +176,19 @@ func TestQueueDragKeepsPlayNextAndBoundary(t *testing.T) {
 		t.Errorf("after: %v, recStart %d", ids(q.items), q.recStart)
 	}
 }
+
+// YouTube Music recommends a song's music video and its audio upload as two
+// tracks; only one of them is queued.
+func TestAppendGeneratedSkipsOtherUploadsOfSameSong(t *testing.T) {
+	q := newQueue()
+	q.replace(youtube.MusicItem{VideoID: "a", Title: "A", Duration: "1:00"}, nil, 0, "")
+	q.appendGenerated([]youtube.MusicItem{
+		{VideoID: "r1", Title: "Nostalgia", Duration: "3:17"},
+		{VideoID: "r2", Title: "Nostalgia", Duration: "3:16"}, // same song
+		{VideoID: "r3", Title: "Nostalgia", Duration: "5:30"}, // a different length: another song
+		{VideoID: "r4", Title: "A", Duration: "1:02"},         // the playing song
+	})
+	if got := ids(q.items); !slices.Equal(got, []string{"a", "r1", "r3"}) {
+		t.Fatalf("queue %v", got)
+	}
+}

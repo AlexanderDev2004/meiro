@@ -26,7 +26,7 @@ permissions:
 env:
   # The release tag has the v; the asset name does not, so the version is
   # kept without one and the tag adds it.
-  ACTIONLINT_VERSION: 1.7.9
+  ACTIONLINT_VERSION: 1.7.12
 
 jobs:
   # Every static check on one runner: they are all quick, and splitting them
@@ -37,8 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: bazel-contrib/setup-bazel@0.19.0
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           # One disk cache per job, named after the job, because a cache
@@ -52,7 +52,7 @@ jobs:
           repository-cache: true
       # go.mod is still where the Go dependencies are written down, so the
       # toolchain that reads it has to be here.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Check formatting
@@ -78,8 +78,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: bazel-contrib/setup-bazel@0.19.0
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           # One disk cache per job, named after the job, because a cache
@@ -93,13 +93,13 @@ jobs:
           repository-cache: true
       # golangci-lint type-checks the packages, so it reads the module cache
       # the Go toolchain keeps.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # It type-checks by compiling, into Go's build cache, and keeps its own
       # analysis cache: a run after the first reads both and looks at what
       # changed. The linter's version is in the key, as is the rules file.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -115,8 +115,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: bazel-contrib/setup-bazel@0.19.0
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           # One disk cache per job, named after the job, because a cache
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check shell scripts
         run: shellcheck --severity=warning scripts/fetch-tools.sh scripts/build-ffmpeg.sh scripts/package-linux.sh tools/clean.sh tools/dist.sh tools/format.sh tools/lint.sh tools/workspace.sh
       - name: Check workflows

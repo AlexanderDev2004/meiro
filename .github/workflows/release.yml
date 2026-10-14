@@ -71,7 +71,7 @@ jobs:
             echo "sha=${{ github.sha }}"
           } >> "$GITHUB_OUTPUT"
           echo "Releasing $tag"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.resolve.outputs.sha }}
           fetch-depth: 0
@@ -117,7 +117,7 @@ jobs:
     if: needs.gate.outputs.tag != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
       - name: Check the tag matches mygo.json
@@ -149,10 +149,10 @@ jobs:
           - { platform: linux-arm64, os: ubuntu-24.04-arm }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: cache
         with:
           path: resources/${{ matrix.platform }}
@@ -177,7 +177,7 @@ jobs:
             "$ffmpeg" -hide_banner -protocols | grep -x '  https'
             "$ffmpeg" -hide_banner -decoders | grep -E ' (opus|aac) '
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-${{ matrix.platform }}
           path: resources/${{ matrix.platform }}
@@ -203,14 +203,14 @@ jobs:
           - { platform: linux-arm64, os: ubuntu-latest, variant: minimal }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
-      - uses: bazel-contrib/setup-bazel@0.19.0
+      - uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           repository-cache: true
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -244,19 +244,19 @@ jobs:
 
       # A universal macOS app is combined from both architecture directories,
       # so it takes both halves of the ffmpeg build.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: matrix.variant == 'full' && matrix.platform == 'darwin-universal'
         with:
           name: ffmpeg-darwin-arm64
           path: resources/darwin-arm64
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: matrix.variant == 'full' && matrix.platform == 'darwin-universal'
         with:
           name: ffmpeg-darwin-amd64
           path: resources/darwin-amd64
       # Only the full build downloads the ffmpeg artifact; minimal resolves
       # ffmpeg and yt-dlp from PATH at runtime.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: matrix.variant == 'full' && matrix.platform != 'darwin-universal'
         with:
           name: ffmpeg-${{ matrix.platform }}
@@ -317,13 +317,13 @@ jobs:
             \( -name 'update-*.json' -o -name '*.delta' -o -name '*.tar.gz' \) -exec cp {} "$updates/" \;
           ls -la artifacts "$updates"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: meiro-${{ matrix.platform }}-${{ matrix.variant }}
           path: artifacts/*
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: matrix.variant == 'minimal'
         with:
           name: minimal-updates-${{ matrix.platform }}
@@ -337,12 +337,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: meiro-*
           path: artifacts
           merge-multiple: true
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: minimal-updates-*
           path: minimal-updates
@@ -355,8 +355,28 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           # Not latest: the app finds desktop releases by their tag prefix.
+          version="${{ needs.gate.outputs.version }}"
+          # The notes are the version's CHANGELOG.md section, so the release
+          # says what the changelog says.
+          awk -v v="$version" '
+            /^## \[/ { on = index($0, "## [" v "]") == 1; next }
+            on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $version."; exit 1; }
+          {
+            echo "## Downloads"
+            echo
+            echo "- **macOS**: the universal \`.dmg\` (Apple Silicon and Intel)."
+            echo "- **Linux** (\`amd64\`, \`arm64\`): \`.deb\`, \`.rpm\`, \`.AppImage\` or \`.tar.gz\`."
+            echo "- Full builds bundle ffmpeg and yt-dlp; \`minimal\` builds use the ones on your system."
+            echo "- Verify downloads with \`SHA256SUMS.txt\`."
+            echo
+            echo "## What's new"
+            cat notes.md
+            echo
+            echo "**Full changelog**: https://github.com/$GH_REPO/blob/${{ needs.gate.outputs.tag }}/CHANGELOG.md"
+          } > release-notes.md
           gh release create "${{ needs.gate.outputs.tag }}" artifacts/* \
-            --title "Meiro ${{ needs.gate.outputs.version }}" --generate-notes --verify-tag --latest=false
+            --title "Meiro $version" --notes-file release-notes.md --verify-tag --latest=false
       # The minimal build's update files, apart from the downloads: its own
       # release, which never becomes latest, tagged for its feed.
       - name: Publish the minimal updates

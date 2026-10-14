@@ -8,31 +8,9 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Fixed
-
-- **Playlist track controls**: keep the hover play overlay centered inside the
-  track artwork instead of placing it below the row.
-
-### Added
-
-- **Search menus**: right-click a result on the search page, or an item in the
-  panel under the search bar, to open its menu. A song offers Play next, Add to
-  queue, Add to playlist and Copy link; an album, artist or playlist offers the
-  page it names and its link, with Shuffle play for a playlist. The leading
-  result offers the same menu, from a button on its artwork.
-- **Playlist search**: an icon button beside a playlist page's Play and Shuffle
-  buttons opens a bar that narrows the page to the songs whose title or artist
-  holds what is typed. Play, Shuffle and a song's own place still use the whole
-  playlist, so a match plays from where it sits in it.
-
-### Changed
-
-- macOS releases are one universal download that runs on Apple Silicon and
-  Intel, instead of a separate download for each.
-
 ## [0.1.0]
 
-<!-- Add the release date when v0.1.0 is tagged: ## [0.1.0] - YYYY-MM-DD -->
+<!-- Add the release date when desktop-v0.1.0 is tagged: ## [0.1.0] - YYYY-MM-DD -->
 
 The first release.
 
@@ -62,5 +40,20 @@ The first release.
 - **Account import** from the YouTube Music session in Chrome, Safari,
   Firefox, Brave, Edge, or Helium, stored in the system credential store where
   one is available. Public browsing and playback need no account.
-- **Packages** for macOS Apple Silicon and Intel, and Linux `amd64` and
-  `arm64` as `.deb`, `.rpm`, `.AppImage`, and `.tar.gz`.
+- **Search menus**: right-click a result on the search page, or an item in the
+  panel under the search bar, to open its menu. A song offers Play next, Add to
+  queue, Add to playlist and Copy link; an album, artist or playlist offers the
+  page it names and its link, with Shuffle play for a playlist. The leading
+  result offers the same menu, from a button on its artwork.
+- **Playlist search**: an icon button beside a playlist page's Play and Shuffle
+  buttons opens a bar that narrows the page to the songs whose title or artist
+  holds what is typed. Play, Shuffle and a song's own place still use the whole
+  playlist, so a match plays from where it sits in it.
+- **Packages** for macOS as one universal download that runs on Apple Silicon
+  and Intel, and Linux `amd64` and `arm64` as `.deb`, `.rpm`, `.AppImage`, and
+  `.tar.gz`. Full builds bundle ffmpeg and yt-dlp; minimal builds use the ones
+  on your system.
+- **Automatic updates**: the app checks once a day for a signed release, shows
+  its notes, and offers to install, skip, or remind you later, with optional
+  background installation in Settings. Package installs and development
+  builds do not check.

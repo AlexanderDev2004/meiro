@@ -49,6 +49,10 @@ The first release.
   buttons opens a bar that narrows the page to the songs whose title or artist
   holds what is typed. Play, Shuffle and a song's own place still use the whole
   playlist, so a match plays from where it sits in it.
+- **Tray mini player**: the tray icon's menu opens a small player with the
+  current track's artwork, a position slider, shuffle, previous, play or pause,
+  next and repeat, and buttons to open Meiro or quit. On Linux it opens in the
+  middle of the screen, since tray icons there report no clicks.
 - **Packages** for macOS as one universal download that runs on Apple Silicon
   and Intel, and Linux `amd64` and `arm64` as `.deb`, `.rpm`, `.AppImage`, and
   `.tar.gz`. Full builds bundle ffmpeg and yt-dlp; minimal builds use the ones

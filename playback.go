@@ -31,7 +31,18 @@ type playback struct {
 	muted       float64 // the volume to return to, while muted
 	shuffle     bool
 	repeat      repeatMode
-	playErr     string
+	// playErr is the reason the current track does not play, as shown;
+	// rawPlayErr is what was reported, which is also what tells one failure
+	// from the next.
+	playErr, rawPlayErr string
+	// skipped counts the tracks in a row that were passed over because they
+	// would not play; a track that plays, or one the listener chooses, ends
+	// the run.
+	skipped int
+	// recoveries counts the times in a row the current track's stream broke
+	// off and was found again; the count ends when the track plays on.
+	recoveries    int
+	recoveredFrom time.Duration
 
 	// stream finds the current track's audio; it is busy from the moment a
 	// track is chosen until its audio is found.
@@ -154,12 +165,40 @@ func (a *app) queueContext(index int) (youtube.UpNextOptions, string) {
 	return options, source
 }
 
+// maxSkips is how many unplayable tracks in a row the queue moves past
+// before it stops and shows the error, so that a network that is down does
+// not use the whole queue up.
+const maxSkips = 3
+
 // start makes item the current track and finds its audio.
 func (a *app) start(item youtube.MusicItem) {
+	a.skipped = 0
+	a.startTrack(item)
+}
+
+// skipUnplayable moves on to the next track after item failed to play, unless
+// maxSkips tracks were passed over already or nothing follows. Then the
+// track stays where it is, with the reason it failed.
+func (a *app) skipUnplayable(item youtube.MusicItem) {
+	if a.current.VideoID != item.VideoID || a.skipped >= maxSkips {
+		return
+	}
+	next, ok := a.queue.next(a.settings.AutoPlay, a.repeat)
+	if !ok {
+		return
+	}
+	a.skipped++
+	a.notice = "Skipped " + item.Title + ": " + strings.TrimSuffix(a.playErr, ".")
+	a.startTrack(a.queue.moveTo(next))
+}
+
+// startTrack is start without ending a run of skipped tracks.
+func (a *app) startTrack(item youtube.MusicItem) {
+	a.recoveries = 0
 	changed := a.current.VideoID != item.VideoID
 	a.current = item
 	a.total = parseDuration(item.Duration)
-	a.scrub, a.playErr = 0, ""
+	a.scrub, a.playErr, a.rawPlayErr = 0, "", ""
 	// A position in the track that is ending is not one for the next one, and
 	// the decode the seek was moving is about to be replaced.
 	a.seeking.stop()
@@ -209,21 +248,20 @@ func (a *app) streamAudio(item youtube.MusicItem) {
 		return found, nil
 	}, func(found resolvedAudio, err error) {
 		if err != nil {
-			log.Printf("playback: audio resolution failed video_id=%s: %v", item.VideoID, err)
-			a.playErr = err.Error()
-			a.syncSystemMedia()
+			a.failPlayback(item, "audio resolution failed", err.Error())
+			a.skipUnplayable(item)
 			return
 		}
 		if found.total > 0 {
 			a.total = found.total
 		}
 		if found.playErr != nil {
-			log.Printf("playback: player could not open video_id=%s: %v", item.VideoID, found.playErr)
-			a.playErr = found.playErr.Error()
-			a.syncSystemMedia()
+			a.failPlayback(item, "player could not open", found.playErr.Error())
+			a.skipUnplayable(item)
 			return
 		}
 		log.Printf("playback: audio started video_id=%s from_cache=%t duration=%s", item.VideoID, found.fromCache, found.total)
+		a.skipped = 0
 		if !found.fromCache {
 			// The direct URL is already in hand, so the cache downloads it as
 			// it is instead of resolving the same track again.
@@ -232,6 +270,77 @@ func (a *app) streamAudio(item youtube.MusicItem) {
 		a.warmNext()
 		a.syncSystemMedia()
 	})
+}
+
+// failPlayback records why item did not play: the raw error goes to the log
+// and the listener sees a short reason.
+func (a *app) failPlayback(item youtube.MusicItem, what, raw string) {
+	log.Printf("playback: %s video_id=%s: %s", what, item.VideoID, raw)
+	a.rawPlayErr, a.playErr = raw, playErrorMessage(raw)
+	a.syncSystemMedia()
+}
+
+const (
+	// maxRecoveries is how many times in a row a stream that broke off is
+	// found again before the track is given up on.
+	maxRecoveries = 3
+	// recoveryHealthy is how far a recovered stream plays before it counts as
+	// working again.
+	recoveryHealthy = 10 * time.Second
+	// recoveryBackoff is the wait before the first retry; each one waits
+	// longer, which gives a network that just came back a moment to settle.
+	recoveryBackoff = 500 * time.Millisecond
+)
+
+// recoverStream picks the current track up where its stream broke off, as it
+// does when the network drops mid-song, or the machine wakes with an audio
+// URL that has expired: it resolves the track again, which the URL cache
+// must not answer from memory, and plays from the position reached. It
+// reports false when the tries are used up, and a failure that ends one try
+// starts the next from the apply.
+func (a *app) recoverStream(failure string) bool {
+	item := a.current
+	if item.VideoID == "" || a.recoveries >= maxRecoveries {
+		return false
+	}
+	a.recoveries++
+	attempt := a.recoveries
+	at := a.player.Position()
+	if attempt == 1 {
+		a.recoveredFrom = at
+	}
+	paused, bySleep := a.player.Paused(), a.suspendedWhilePlaying
+	cookie, cache := a.account.cookie(), a.currentAudioCache()
+	log.Printf("playback: stream broke off video_id=%s at=%s attempt=%d/%d: %s", item.VideoID, at.Round(time.Second), attempt, maxRecoveries, failure)
+	startTask(a, &a.stream, audio.ResolveTimeout+time.Duration(attempt)*recoveryBackoff, func(ctx context.Context) (resolvedAudio, error) {
+		if err := a.sleep(ctx, time.Duration(attempt)*recoveryBackoff); err != nil {
+			return resolvedAudio{}, err
+		}
+		a.streams.Forget(item.VideoID)
+		found, err := a.findAudio(ctx, item, cookie, cache)
+		if err != nil || ctx.Err() != nil {
+			return found, err
+		}
+		found.playErr = a.player.PlayAt(found.url, at, paused)
+		return found, nil
+	}, func(found resolvedAudio, err error) {
+		if err == nil {
+			err = found.playErr
+		}
+		if err != nil {
+			log.Printf("playback: recovery failed video_id=%s attempt=%d/%d: %v", item.VideoID, attempt, maxRecoveries, err)
+			if !a.recoverStream(err.Error()) {
+				a.failPlayback(item, "recovery failed", err.Error())
+				a.skipUnplayable(item)
+			}
+			return
+		}
+		if paused && bySleep && !a.suspendedWhilePlaying {
+			a.player.Resume() // the wake came while the stream was on its way
+		}
+		a.syncSystemMedia()
+	})
+	return true
 }
 
 // findAudio is where a track's audio is: in the cache, or from yt-dlp.
@@ -498,16 +607,22 @@ func (a *app) poll() {
 		return
 	}
 	if failure := a.player.Failure(); failure != "" {
-		if a.playErr != failure {
-			a.playErr = failure
-			a.syncSystemMedia()
+		if a.stream.busy() {
+			return // a track, or this one again, is on its way
 		}
-		// ffmpeg gave up on the stream. The queue keeps its place: the track
-		// after this one plays, and the failure stays on the player until it
-		// does. A stream that stops because the sound did is not the queue's
-		// business, so it is left where it is.
+		if a.player.StreamFailed() && a.recoverStream(failure) {
+			return
+		}
+		if a.rawPlayErr != failure {
+			a.failPlayback(a.current, "player stopped", failure)
+		}
+		// ffmpeg gave up on the stream, and finding it again did not help.
+		// The queue keeps its place: the track after this one plays, and the
+		// failure stays on the player until it does. A stream that stops
+		// because the sound did is not the queue's business, so it is left
+		// where it is.
 		if a.player.StreamFailed() {
-			a.advance()
+			a.skipUnplayable(a.current)
 		}
 		return
 	}
@@ -519,6 +634,9 @@ func (a *app) poll() {
 		return
 	}
 	if a.player.Playing() {
+		if a.recoveries > 0 && a.player.Position() > a.recoveredFrom+recoveryHealthy {
+			a.recoveries = 0 // it held, so the next break gets all its tries
+		}
 		a.ensureUpNext()
 		if !a.scrubbing {
 			a.scrub = a.player.Position().Seconds()

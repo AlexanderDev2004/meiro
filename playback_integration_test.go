@@ -29,6 +29,9 @@ type resolved struct {
 	err map[string]error
 	// file, when set, is the audio every track resolves to.
 	file string
+	// url, when set, chooses the URL of a track's nth resolve (from 1), in
+	// place of file, and may fail it.
+	url func(videoID string, n int) (string, error)
 }
 
 func (r *resolved) resolve(_ context.Context, videoID, _ string) (string, time.Duration, error) {
@@ -37,6 +40,16 @@ func (r *resolved) resolve(_ context.Context, videoID, _ string) (string, time.D
 	r.ids = append(r.ids, videoID)
 	if err := r.err[videoID]; err != nil {
 		return "", 0, err
+	}
+	if r.url != nil {
+		n := 0
+		for _, id := range r.ids {
+			if id == videoID {
+				n++
+			}
+		}
+		url, err := r.url(videoID, n)
+		return url, 3 * time.Minute, err
 	}
 	if r.file != "" {
 		return r.file, 3 * time.Second, nil
@@ -213,16 +226,97 @@ func TestEnqueueOnAnIdleAppStartsPlaying(t *testing.T) {
 
 func TestAnUnplayableTrackSaysWhyAndRetries(t *testing.T) {
 	a, r := playbackApp(t)
-	r.err["bad"] = errors.New("video unavailable")
+	r.err["bad"] = errors.New("yt-dlp could not resolve the audio: Video unavailable")
 	a.play(tracks("bad")[0], nil)
-	if a.playErr != "video unavailable" || a.loading() {
+	if a.playErr != "This track is no longer available." || a.loading() {
 		t.Fatalf("playErr=%q loading=%v", a.playErr, a.loading())
 	}
 	// Pressing play asks for the same track again.
 	delete(r.err, "bad")
 	a.togglePlay()
-	if r.count("bad") != 2 || a.playErr == "video unavailable" {
+	if r.count("bad") != 2 || a.playErr != "" {
 		t.Errorf("play did not resolve the track again: %d resolves, playErr %q", r.count("bad"), a.playErr)
+	}
+}
+
+// Each way a track fails says why in the player bar, in words, not as what
+// yt-dlp printed.
+func TestAnUnplayableTrackShowsAReadableReason(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"yt-dlp could not resolve the audio: Video unavailable. This video is not available in your country", "This track is not available in your region."},
+		{"yt-dlp could not resolve the audio: Sign in to confirm your age. This video may be inappropriate for some users.", "This track is age-restricted. Sign in to play it."},
+		{"yt-dlp could not resolve the audio: Sign in to confirm you\u2019re not a bot", "YouTube wants you to sign in before it plays this track."},
+		{"yt-dlp could not resolve the audio: Private video. Sign in if you've been granted access", "This track is private."},
+		{"yt-dlp could not resolve the audio: This video has been removed by the uploader", "This track is no longer available."},
+		{"yt-dlp could not resolve the audio: Unable to download webpage: Temporary failure in name resolution", "Could not reach YouTube. Check your connection."},
+		{"context deadline exceeded", "Could not reach YouTube. Check your connection."},
+		{"yt-dlp could not resolve the audio: something new", "This track could not be played: yt-dlp could not resolve the audio: something new"},
+	} {
+		a, r := playbackApp(t)
+		r.err["bad"] = errors.New(tc.raw)
+		tt := ui.NewTester(a.view, 1000, 700)
+		a.play(tracks("bad")[0], nil)
+		tt.Frame()
+		if a.playErr != tc.want {
+			t.Errorf("%q: playErr = %q, want %q", tc.raw, a.playErr, tc.want)
+		}
+		if !tt.HasText(tc.want) {
+			t.Errorf("%q: the player bar does not show %q: %q", tc.raw, tc.want, tt.Texts())
+		}
+		if a.rawPlayErr != tc.raw {
+			t.Errorf("the raw error was not kept for the log: %q", a.rawPlayErr)
+		}
+	}
+}
+
+func TestAnUnplayableTrackIsSkipped(t *testing.T) {
+	a, r := playbackApp(t)
+	r.err["b"] = errors.New("Video unavailable")
+	q := tracks("a", "b", "c")
+	a.play(q[1], q)
+	if a.current.VideoID != "c" || a.playErr != "" {
+		t.Fatalf("current %q, playErr %q: want the track after the unplayable one playing", a.current.VideoID, a.playErr)
+	}
+	if !strings.Contains(a.notice, "Skipped Track b") {
+		t.Errorf("notice = %q, want it to say what was skipped", a.notice)
+	}
+}
+
+// A run of failures, as a network that is down makes, stops at the limit with
+// the error shown, and a track the listener chooses starts the count again.
+func TestSkippingStopsAfterAFewFailuresInARow(t *testing.T) {
+	a, r := playbackApp(t)
+	q := tracks("a", "b", "c", "d", "e", "f", "g")
+	for _, id := range ids(q)[:6] {
+		r.err[id] = errors.New("Temporary failure in name resolution")
+	}
+	a.play(q[0], q)
+	if want := q[maxSkips].VideoID; a.current.VideoID != want {
+		t.Fatalf("current = %q, want %q: the first %d failures are skipped and the next stays", a.current.VideoID, want, maxSkips)
+	}
+	if a.playErr != "Could not reach YouTube. Check your connection." {
+		t.Errorf("playErr = %q, want the error shown once the limit is reached", a.playErr)
+	}
+	if r.asked("e") {
+		t.Error("the queue went on past the limit")
+	}
+	a.playVideoID("e") // chosen by the listener
+	if a.current.VideoID != "g" {
+		t.Errorf("current = %q, want a fresh run of skips to reach g", a.current.VideoID)
+	}
+}
+
+func TestAPlayedTrackEndsTheRunOfSkips(t *testing.T) {
+	a, r := playbackApp(t)
+	q := tracks("a", "b", "c", "d", "e", "f")
+	for _, id := range []string{"a", "b", "d", "e"} {
+		r.err[id] = errors.New("Video unavailable")
+	}
+	a.play(q[0], q)
+	// a, b skipped, c plays; the two failures after it are a new run.
+	a.advance()
+	if a.current.VideoID != "f" || a.playErr != "" {
+		t.Errorf("current %q, playErr %q: want f playing after c", a.current.VideoID, a.playErr)
 	}
 }
 
@@ -545,5 +639,93 @@ func TestEditingTheQueueKeepsPlayingAndFollowsTheEdits(t *testing.T) {
 	a.clearUpcoming()
 	if got := ids(a.queue.items); !slices.Equal(got, []string{"a", "d"}) || a.current.VideoID != "d" {
 		t.Errorf("after clearing: %v, playing %q", got, a.current.VideoID)
+	}
+}
+
+// A stream that breaks off mid-song, as the network dropping or an audio URL
+// that expired while the machine slept makes it, is found again and played
+// on from where it stopped.
+func TestABrokenStreamResumesFromItsPosition(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	tone := filepath.Join(t.TempDir(), "tone.wav")
+	if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=duration=30", tone).CombinedOutput(); err != nil {
+		t.Fatalf("making a tone: %v: %s", err, out)
+	}
+	expired := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expired", http.StatusForbidden)
+	}))
+	defer expired.Close()
+
+	a, r := playbackApp(t)
+	// The first URL is dead; resolving again gives one that plays.
+	r.url = func(_ string, n int) (string, error) {
+		if n == 1 {
+			return expired.URL + "/a.m4a", nil
+		}
+		return tone, nil
+	}
+	a.play(tracks("a")[0], nil)
+	a.player.Seek(12 * time.Second) // the track had played to here
+	waitFor(t, func() bool { return a.player.Failure() != "" })
+
+	waitFor(t, func() bool {
+		a.poll()
+		return a.player.Playing() && a.player.Failure() == ""
+	})
+	if got := r.count("a"); got != 2 {
+		t.Errorf("resolved %d times, want 2: the expired URL must not be served from memory", got)
+	}
+	if pos := a.player.Position(); pos < 12*time.Second {
+		t.Errorf("position %v, want playback to go on from 12s", pos)
+	}
+	if a.playErr != "" || a.current.VideoID != "a" {
+		t.Errorf("playErr %q, current %q", a.playErr, a.current.VideoID)
+	}
+}
+
+// A stream that stays broken is tried a bounded number of times, then the
+// reason is shown; a resolve that fails while the network is down counts as
+// a try, and one that works afterwards ends the trouble.
+func TestAStreamThatStaysBrokenGivesUpAfterTheRetries(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	expired := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expired", http.StatusForbidden)
+	}))
+	defer expired.Close()
+
+	a, r := playbackApp(t)
+	r.url = func(videoID string, n int) (string, error) {
+		if n%2 == 0 {
+			return "", errors.New("Temporary failure in name resolution")
+		}
+		return expired.URL + "/" + videoID + ".m4a", nil
+	}
+	q := tracks("a")
+	a.play(q[0], q)
+	waitFor(t, func() bool {
+		a.poll()
+		return a.playErr != "" && !a.stream.busy()
+	})
+	if got, want := r.count("a"), 1+maxRecoveries; got != want {
+		t.Errorf("resolved %d times, want the first play and %d retries", got, maxRecoveries)
+	}
+	if a.playErr == "" || a.current.VideoID != "a" {
+		t.Errorf("playErr %q, current %q: want the failure shown on the track", a.playErr, a.current.VideoID)
+	}
+}
+
+func waitFor(t *testing.T, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for !done() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

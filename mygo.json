@@ -5,5 +5,10 @@
   "out": "build",
   "urlSchemes": [
     "meiro"
-  ]
+  ],
+  "updates": {
+    "publicKey": "wI4WiYlNHJ+j7ElvtCdJV5dekixSMGACa1k4sp5hano=",
+    "github": "elianiva/meiro",
+    "tagPrefix": "desktop-v"
+  }
 }

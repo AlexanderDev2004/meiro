@@ -40,7 +40,17 @@ repository. Desktop releases are tagged `desktop-v0.1.0` and must not be
 the repository's latest release; the app finds the newest tag with the
 prefix through the GitHub API instead.
 
+Store the secret key in the repository's Actions secrets as
+`MYGO_UPDATER_PRIVATE_KEY` (`gh secret set MYGO_UPDATER_PRIVATE_KEY <
+mygo-update.key`). MyGo reads the key from that variable.
+
 ## Releasing
+
+CI does this when you push a `desktop-v0.2.0` tag (after adding the changelog
+section): `release.yml` signs the full builds, writes the update files and
+publishes the release, not marked latest. The minimal builds are built
+without updates, so they never replace themselves with a full build. The
+steps below are the same release by hand.
 
 1. Add a `## 0.2.0` section to [`CHANGELOG.md`](../CHANGELOG.md). It
    becomes the release notes of the update window.

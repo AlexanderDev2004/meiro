@@ -105,7 +105,7 @@ Explore is shown in a compact window, with Trending below the visible area.
 ## Install
 
 Download the latest build for your system from the
-[releases page](https://github.com/elianiva/meiro/releases/latest).
+[releases page](https://github.com/elianiva/meiro/releases).
 
 **macOS**: open the disk image and drag Meiro to Applications. The app is not
 notarized by Apple yet, so the first time, right-click it and choose **Open**

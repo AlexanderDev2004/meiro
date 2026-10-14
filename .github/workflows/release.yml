@@ -1,14 +1,16 @@
 name: Release
 
-# Push a tag such as v0.2.0 to build the app for every platform and publish
-# it as a GitHub release. It builds only after a CI run already passed on
+# Push a tag such as desktop-v0.2.0 to build the app for every platform and
+# publish it as a GitHub release, with the signed update files the app's
+# updater reads (docs/updates.md). The release is not marked latest: the app
+# finds the newest desktop-v release through the GitHub API. It builds only after a CI run already passed on
 # the tag's commit, so no release builds from unchecked code. Triggering
 # only on tags keeps these expensive platform builds off every branch push
 # and pull request. Run it by hand on a tag to retry after CI turns green,
 # or on a branch to build without publishing.
 on:
   push:
-    tags: ["v*"]
+    tags: ["desktop-v*"]
   workflow_dispatch:
 
 permissions:
@@ -60,12 +62,12 @@ jobs:
             tag="${{ github.ref_name }}"
           fi
           case "$tag" in
-            v*) ;;
+            desktop-v*) ;;
             *) echo "Not a version tag: $tag"; exit 1 ;;
           esac
           {
             echo "tag=$tag"
-            echo "version=${tag#v}"
+            echo "version=${tag#desktop-v}"
             echo "sha=${{ github.sha }}"
           } >> "$GITHUB_OUTPUT"
           echo "Releasing $tag"
@@ -120,7 +122,7 @@ jobs:
           ref: ${{ needs.gate.outputs.sha }}
       - name: Check the tag matches mygo.json
         run: |
-          want="v$(jq -r .version mygo.json)"
+          want="desktop-v$(jq -r .version mygo.json)"
           test "${{ needs.gate.outputs.tag }}" = "$want" || {
             echo "Tag ${{ needs.gate.outputs.tag }} does not match mygo.json version $want."
             exit 1
@@ -212,13 +214,32 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # The tag is the version: v1.2.3 builds as 1.2.3.
+      # The tag is the version: desktop-v1.2.3 builds as 1.2.3.
       - name: Set the version
         run: |
           version="${{ needs.gate.outputs.version }}"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           jq --arg v "$version" '.version = $v' mygo.json > mygo.json.new
           mv mygo.json.new mygo.json
+
+      # Only the full build is the app's update channel. A minimal build
+      # would write the same update files and, with the feed baked in,
+      # replace itself with the full app, so it is built without updates.
+      - name: Leave updates out of the minimal build
+        if: matrix.variant == 'minimal'
+        run: |
+          jq 'del(.updates)' mygo.json > mygo.json.new
+          mv mygo.json.new mygo.json
+
+      - name: Check the update signing key
+        if: matrix.variant == 'full' && needs.gate.outputs.tag != ''
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: |
+          test -n "$MYGO_UPDATER_PRIVATE_KEY" || {
+            echo "The MYGO_UPDATER_PRIVATE_KEY secret is not set; refusing to release without signed updates."
+            exit 1
+          }
 
       # A universal macOS app is combined from both architecture directories,
       # so it takes both halves of the ffmpeg build.
@@ -244,6 +265,11 @@ jobs:
         if: matrix.variant == 'full'
         env:
           YT_DLP_VERSION: ${{ needs.gate.outputs.ytdlp }}
+          # Signs the update archives. Without the secret (a manual branch
+          # build) the build still runs, unsigned. GH_TOKEN lets MyGo read
+          # the published manifest to make delta updates.
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: bazel run //:dist -- --out dist "${{ matrix.platform }}"
 
       - name: Build minimal
@@ -276,6 +302,15 @@ jobs:
               scripts/package-linux.sh "${{ matrix.platform }}" "$VERSION" artifacts "${{ matrix.variant }}"
               ;;
           esac
+          # The signed update archive, deltas and manifest are the full
+          # build's. Linux packaging already copied its archive.
+          if [ "${{ matrix.variant }}" = full ]; then
+            find "dist/${{ matrix.platform }}" -maxdepth 1 -type f \
+              \( -name 'update-*.json' -o -name '*.delta' \) -exec cp {} artifacts/ \;
+            case "${{ matrix.platform }}" in
+              darwin-*) find "dist/${{ matrix.platform }}" -maxdepth 1 -type f -name '*.tar.gz' -exec cp {} artifacts/ \; ;;
+            esac
+          fi
           ls -la artifacts
 
       - uses: actions/upload-artifact@v5
@@ -301,4 +336,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "${{ needs.gate.outputs.tag }}" artifacts/* --title "Meiro ${{ needs.gate.outputs.version }}" --generate-notes --verify-tag
+        run: |
+          # Not latest: the app finds desktop releases by their tag prefix.
+          gh release create "${{ needs.gate.outputs.tag }}" artifacts/* \
+            --title "Meiro ${{ needs.gate.outputs.version }}" --generate-notes --verify-tag --latest=false

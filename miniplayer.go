@@ -24,8 +24,12 @@ const (
 func (a *app) miniPlayer(c *ui.Context) {
 	m3.Provide(c, a.resolveTheme(c))
 	sc := m3.Of(c).Scheme
-	ui.Column(c).Key("mini").Fill().Padding(16).Gap(12).Radius(m3.ExtraLarge).
-		Background(sc.SurfaceContainer).Children(func() {
+	col := ui.Column(c).Key("mini").Fill().Padding(16).Gap(12).Background(sc.SurfaceContainer)
+	if runtime.GOOS != "darwin" {
+		// macOS rounds the popover itself.
+		col.Radius(m3.ExtraLarge)
+	}
+	col.Children(func() {
 		ui.Row(c).Gap(14).AlignItems(ui.Center).Children(func() {
 			a.art(c, a.current.Thumbnail, miniArt*2, miniArt, m3.Large, func() {
 				if a.current.IsVideo() {
@@ -61,14 +65,13 @@ type mini struct {
 	win atomic.Pointer[mygo.Window]
 }
 
-// toggleMini opens the mini player next to the tray icon, or closes it
-// where it is open. It runs on the main thread.
-func (d *desktop) toggleMini(view func(*ui.Context)) {
+// showMini opens the mini player next to the tray icon. A click on the icon
+// while it is open leaves it open. It runs on the main thread.
+func (d *desktop) showMini(view func(*ui.Context)) {
 	if d == nil || d.tray == nil {
 		return
 	}
 	if d.mini.win.Load() != nil {
-		d.closeMini()
 		return
 	}
 	fl := mygo.NewFlyout(mygo.FlyoutOptions{

@@ -158,24 +158,16 @@ func (d *desktop) setOpenAtLogin(on bool) {
 	}
 }
 
-// trayState is what the tray shows: the track playing, and whether its menu
-// offers Pause rather than Play.
+// trayState is what the tray shows: the tooltip naming the track playing.
 type trayState struct {
-	tip   string
-	pause bool
-}
-
-// trayActions are what the tray's menu does.
-type trayActions struct {
-	toggle, next, show func()
-	// mini draws the mini player.
-	mini func(*ui.Context)
+	tip string
 }
 
 // setTray shows the tray icon with state while on is set, and removes it
-// otherwise. It replaces the native menu only when what it shows changed:
-// playback calls it four times a second.
-func (d *desktop) setTray(on bool, state trayState, actions trayActions) {
+// otherwise. A click on the icon opens the mini player, which holds what a
+// menu would. It changes the tooltip only when it changed: playback calls it
+// four times a second.
+func (d *desktop) setTray(on bool, state trayState, mini func(*ui.Context)) {
 	if d == nil {
 		return
 	}
@@ -200,14 +192,13 @@ func (d *desktop) setTray(on bool, state trayState, actions trayActions) {
 			Icon:           icon,
 			IconIsTemplate: true,
 			ToolTip:        state.tip,
-			Menu:           d.trayMenu(state, actions),
 		})
 		if err != nil {
 			log.Printf("showing the tray icon: %v", err)
 			d.trayFailed = true
 			return
 		}
-		tray.OnClick(func() { d.update(func() { d.toggleMini(actions.mini) }) })
+		tray.OnClick(func() { d.update(func() { d.showMini(mini) }) })
 		d.tray, d.trayShown = tray, state
 		return
 	}
@@ -216,7 +207,6 @@ func (d *desktop) setTray(on bool, state trayState, actions trayActions) {
 	}
 	d.trayShown = state
 	d.tray.SetToolTip(state.tip)
-	d.tray.SetMenu(d.trayMenu(state, actions))
 }
 
 // trayIcon reads the app icon for the menu bar, scaled by the system.
@@ -226,28 +216,6 @@ func trayIcon() ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(filepath.Join(dir, "icon.png"))
-}
-
-// trayMenu is the menu of the tray icon: transport, the window, and quit.
-// Its items are clicked on the system's thread; actions run on the main
-// thread.
-func (d *desktop) trayMenu(state trayState, actions trayActions) *mygo.Menu {
-	playLabel := "Play"
-	if state.pause {
-		playLabel = "Pause"
-	}
-	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: state.tip, Disabled: true},
-		{Label: "Mini player", Click: func(*mygo.MenuItem, *mygo.Window) {
-			d.update(func() { d.toggleMini(actions.mini) })
-		}},
-		mygo.Separator(),
-		{Label: playLabel, Click: func(*mygo.MenuItem, *mygo.Window) { d.update(actions.toggle) }},
-		{Label: "Next track", Click: func(*mygo.MenuItem, *mygo.Window) { d.update(actions.next) }},
-		mygo.Separator(),
-		{Label: "Show Meiro", Click: func(*mygo.MenuItem, *mygo.Window) { d.update(actions.show) }},
-		{Label: "Quit", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-	})
 }
 
 // closeToTray wires what closing the window does to the CloseToTray setting:
@@ -341,12 +309,7 @@ func (a *app) setupDesktop() {
 // path that changes playback reaches it through syncSystemMedia.
 func (a *app) syncDesktop() {
 	a.desktop.keepAwake(a.loading() || (a.player.Active() && !a.player.Paused() && !a.player.Ended()))
-	a.desktop.setTray(a.settings.ShowTray, trayState{tip: a.trayTip(), pause: a.player.Playing() || a.loading()}, trayActions{
-		toggle: a.togglePlay,
-		next:   a.advance,
-		show:   a.desktop.bringToFront,
-		mini:   a.miniPlayer,
-	})
+	a.desktop.setTray(a.settings.ShowTray, trayState{tip: a.trayTip()}, a.miniPlayer)
 }
 
 // syncShortcut registers the global shortcut as the settings say, and turns

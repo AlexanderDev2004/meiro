@@ -8,6 +8,13 @@
 A native desktop player for YouTube Music. Meiro draws its own interface in a
 native window instead of using a Chromium-based web front end.
 
+> **Beta, and unofficial.** Meiro is an independent project. It is not made,
+> endorsed or supported by YouTube or Google, and it uses YouTube's private web
+> interfaces, which YouTube can change at any time. When that happens, parts of
+> Meiro (browsing, search, playback, sign-in) may stop working until it is
+> updated. See [Known issues](#known-issues) and
+> [Troubleshooting](#troubleshooting).
+
 ## Where the name comes from
 
 Meiro is built with the [MyGO](https://github.com/egoist/mygo) framework, and
@@ -109,6 +116,10 @@ compatible RPM-based distribution. You can also make the `.AppImage` executable
 and run it, or unpack the `.tar.gz` and run its `install.sh`. All Linux builds
 need GTK 3 and WebKitGTK 4.1.
 
+**Windows**: there is no Windows release. The code is type-checked for Windows
+in CI, but nobody tests it there, and Windows is not supported yet. Windows
+builds and bug reports are not planned for 0.1.
+
 ## Signing in
 
 To see your personalized Home feed and Library, sign in at
@@ -126,6 +137,87 @@ read. A locked or failing credential store does not trigger this fallback.
 Choose **Sign out** to remove Meiro's saved session.
 
 Public browsing and playback do not need an account.
+
+## Troubleshooting
+
+**Where are the logs?** Open **Settings** and choose **Open logs folder** under
+Logs. Meiro writes `meiro.log` there, rolling over to three older files. The
+top of each file lists the versions of Meiro, ffmpeg and yt-dlp in use. Meiro
+removes passwords and cookies from log lines before it writes them, but read a
+log before you post it.
+
+**I can't sign in.**
+- Sign in at [music.youtube.com](https://music.youtube.com) in the browser
+  first, then pick that same browser in Meiro. Use a profile where you are
+  signed in to YouTube Music.
+- Close the browser, or try again after it has been open for a moment. Some
+  browsers lock their cookie file while running.
+- On Linux, the browser's cookies are encrypted with the desktop keyring. If
+  the keyring is locked or missing, unlock it, or try another browser.
+- If YouTube signed you out in the browser, the saved session is no longer
+  valid. Choose **Sign out** and sign in again.
+- You can browse and play public music without signing in.
+
+**Nothing plays, or a track fails.**
+- Check that you are online, then try another track. Some tracks are not
+  available in your region or need an account (age-restricted or Premium
+  tracks).
+- Meiro finds streams with yt-dlp. YouTube changes often, and an old yt-dlp
+  stops working. Install a release of Meiro with a newer yt-dlp, or, with a
+  minimal build, update the `yt-dlp` on your `PATH`.
+- Look for the error in the log (see above).
+
+**ffmpeg or yt-dlp problems.** The full build bundles both. The minimal build
+needs `ffmpeg`, `yt-dlp`, and Node.js or Bun on `PATH`; if one is missing or
+too old, playback fails. Run `ffmpeg -version` and `yt-dlp --version` in a
+terminal to check them. The log header shows which versions Meiro found.
+
+**Linux does not start.** Meiro needs GTK 3 and WebKitGTK 4.1. Install them
+with your package manager.
+
+**macOS says the app can't be opened.** Meiro is not notarized yet. Right-click
+it and choose **Open**, or allow it in System Settings > Privacy & Security.
+
+Still stuck? Settings has a report button that opens a GitHub issue prefilled
+with your versions. Otherwise
+[open an issue](https://github.com/elianiva/meiro/issues) and attach the
+relevant part of the log.
+
+## Known issues
+
+- Meiro depends on YouTube's private interfaces and on yt-dlp, so a change on
+  YouTube's side can break browsing, playback or sign-in until a fix ships.
+- Windows has no release (see [Install](#install)).
+- The macOS app is not notarized, so the first launch needs the manual step
+  above.
+- Signing in works by importing a browser's session, so you must be signed in
+  in a supported browser first. There is no in-app login.
+- Tracks that YouTube restricts for your region or account may not play.
+
+See the [open issues](https://github.com/elianiva/meiro/issues) for the rest.
+
+## Privacy
+
+Meiro has no account, analytics or telemetry of its own, and no server of its
+own. Its network traffic goes to YouTube and Google (the YouTube Music
+interface, the streams, the artwork), and, to find streams, through yt-dlp.
+Releases that update themselves also contact their update server to check for
+a new version; turn that off in Settings under Updates.
+
+What Meiro keeps on your device:
+- **Settings**, **listening history** (the latest plays, used for the stats),
+  and the **playback state**, in the app's user data folder. Settings has a
+  button to clear the history.
+- **Your session**, if you sign in, in the system credential store, or, when
+  there is none, in a file readable only by your user. **Sign out** removes it.
+  The session has the same access to your account as the browser session it
+  came from, so treat it like a password.
+- **Cached audio and artwork**, in the cache folder you chose. Set the audio
+  limit to `0` to turn the audio cache off.
+- **Logs**, with secrets removed, in the logs folder.
+
+Meiro reads your browser's cookies only when you choose **Sign in**, and only
+to take the YouTube Music session.
 
 ## Build it yourself
 

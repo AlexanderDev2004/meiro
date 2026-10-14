@@ -135,11 +135,16 @@ You need the Go version listed in [`go.mod`](go.mod) and
 ```sh
 just dev     # run with live reload; ffmpeg and yt-dlp must be on PATH
 just run     # build the production app with bundled tools, then open it
+just run-minimal # build and open with system ffmpeg, yt-dlp, and Node.js/Bun
 ```
 
-Run `just` to list the other commands. The release workflow builds DMGs for
-macOS Apple Silicon and Intel, plus Linux `amd64` and `arm64` `.deb`, `.rpm`,
-`.AppImage`, and `.tar.gz` downloads. See
+The minimal build expects `ffmpeg`, `yt-dlp`, and either Node.js or Bun on
+`PATH`. It does not bundle any of these tools or a JavaScript runtime.
+
+Run `just` to list the other commands. Releases include full and minimal
+builds: DMGs for macOS Apple Silicon and Intel, plus Linux `amd64` and `arm64`
+`.deb`, `.rpm`, `.AppImage`, and `.tar.gz` downloads. Minimal downloads include
+`-minimal` in the filename. See
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## Credits
@@ -149,8 +154,9 @@ macOS Apple Silicon and Intel, plus Linux `amd64` and `arm64` `.deb`, `.rpm`,
 - [ffmpeg](https://ffmpeg.org) decodes the audio,
   [yt-dlp](https://github.com/yt-dlp/yt-dlp) finds the streams, and
   [QuickJS](https://github.com/quickjs-ng/quickjs) runs the JavaScript yt-dlp
-  needs to solve YouTube's challenges when Node or Bun is not installed. All
-  three ship inside the app; see
+  needs to solve YouTube's challenges when Node or Bun is not installed. The
+  full build ships all three; the minimal build leaves them all to the system.
+  See
   [`resources/THIRD-PARTY-NOTICES.md`](resources/THIRD-PARTY-NOTICES.md).
 - [Google Sans](https://github.com/googlefonts/googlesans) sets the text,
   under the SIL Open Font License (`fonts/OFL.txt`).

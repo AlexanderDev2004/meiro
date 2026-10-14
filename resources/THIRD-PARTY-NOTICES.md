@@ -1,7 +1,8 @@
 # Third-party software
 
-A release of Meiro ships three programs next to the app. Meiro runs them as
-separate processes.
+The full release of Meiro ships three programs next to the app. The minimal
+release does not bundle these programs; it uses the system's ffmpeg, yt-dlp,
+and Node.js or Bun.
 
 ## ffmpeg
 

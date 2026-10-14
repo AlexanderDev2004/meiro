@@ -186,10 +186,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { platform: darwin-arm64, target: darwin/arm64, os: macos-latest }
-          - { platform: darwin-amd64, target: darwin/amd64, os: macos-latest }
-          - { platform: linux-amd64, target: linux/amd64, os: ubuntu-latest }
-          - { platform: linux-arm64, target: linux/arm64, os: ubuntu-latest }
+          - { platform: darwin-arm64, target: darwin/arm64, os: macos-latest, variant: full }
+          - { platform: darwin-amd64, target: darwin/amd64, os: macos-latest, variant: full }
+          - { platform: linux-amd64, target: linux/amd64, os: ubuntu-latest, variant: full }
+          - { platform: linux-arm64, target: linux/arm64, os: ubuntu-latest, variant: full }
+          - { platform: darwin-arm64, target: darwin/arm64, os: macos-latest, variant: minimal }
+          - { platform: darwin-amd64, target: darwin/amd64, os: macos-latest, variant: minimal }
+          - { platform: linux-amd64, target: linux/amd64, os: ubuntu-latest, variant: minimal }
+          - { platform: linux-arm64, target: linux/arm64, os: ubuntu-latest, variant: minimal }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -207,18 +211,23 @@ jobs:
           jq --arg v "$version" '.version = $v' mygo.json > mygo.json.new
           mv mygo.json.new mygo.json
 
-      # Artifacts lose the executable bit, and the ffmpeg stamp tells
-      # fetch-tools.sh that ffmpeg is already built.
+      # Only the full build downloads the ffmpeg artifact; minimal resolves
+      # ffmpeg and yt-dlp from PATH at runtime.
       - uses: actions/download-artifact@v5
+        if: matrix.variant == 'full'
         with:
           name: ffmpeg-${{ matrix.platform }}
           path: resources/${{ matrix.platform }}
-      - name: Fetch yt-dlp and QuickJS
+      - name: Fetch playback tools
         env:
           YT_DLP_VERSION: ${{ needs.gate.outputs.ytdlp }}
         run: |
-          chmod +x "resources/${{ matrix.platform }}/bin/ffmpeg"
-          scripts/fetch-tools.sh "${{ matrix.platform }}"
+          if [ "${{ matrix.variant }}" = full ]; then
+            chmod +x "resources/${{ matrix.platform }}/bin/ffmpeg"
+            scripts/fetch-tools.sh "${{ matrix.platform }}"
+          else
+            scripts/fetch-tools.sh --minimal "${{ matrix.platform }}"
+          fi
 
       - name: Build
         run: go tool mygo build -platform "${{ matrix.target }}" -o dist
@@ -241,17 +250,19 @@ jobs:
           case "${{ matrix.platform }}" in
             darwin-*)
               dmg="$(find "dist/${{ matrix.platform }}" -maxdepth 1 -name '*.dmg')"
-              cp "$dmg" "artifacts/Meiro-${VERSION}-macos-${arch}.dmg"
+              suffix=""
+              if [ "${{ matrix.variant }}" = minimal ]; then suffix=-minimal; fi
+              cp "$dmg" "artifacts/Meiro-${VERSION}-macos-${arch}${suffix}.dmg"
               ;;
             linux-*)
-              scripts/package-linux.sh "${{ matrix.platform }}" "$VERSION" artifacts
+              scripts/package-linux.sh "${{ matrix.platform }}" "$VERSION" artifacts "${{ matrix.variant }}"
               ;;
           esac
           ls -la artifacts
 
       - uses: actions/upload-artifact@v5
         with:
-          name: meiro-${{ matrix.platform }}
+          name: meiro-${{ matrix.platform }}-${{ matrix.variant }}
           path: artifacts/*
           if-no-files-found: error
 

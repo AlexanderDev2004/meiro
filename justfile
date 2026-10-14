@@ -68,16 +68,33 @@ ci:
 
     echo "All checks passed."
 
-# Get the ffmpeg and yt-dlp a build ships, for one platform.
+# Get the ffmpeg and yt-dlp a full build ships, for one platform.
 tools platform=host:
     scripts/fetch-tools.sh {{platform}}
+
+# Minimal builds bundle nothing; ffmpeg, yt-dlp, and Node.js or Bun must be on PATH.
+minimal-tools platform=host:
+    scripts/fetch-tools.sh --minimal {{platform}}
 
 # Build a production app with its tools inside, into build/.
 build platform=host: (tools platform)
     go tool mygo build -platform {{replace(platform, "-", "/")}}
 
+# Build a minimal production app with its playback tools resolved from PATH.
+build-minimal platform=host: (minimal-tools platform)
+    go tool mygo build -platform {{replace(platform, "-", "/")}}
+
 # Build this machine's production app and open it.
 run: (build host)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{host}}" in
+        darwin-*) open "build/{{host}}/Meiro.app" ;;
+        *) "build/{{host}}/meiro" ;;
+    esac
+
+# Build and open the minimal production app.
+run-minimal: (build-minimal host)
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{host}}" in

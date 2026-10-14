@@ -713,14 +713,14 @@ func TestFailedBrowserImportOffersPastingTheCookieHeader(t *testing.T) {
 	}
 }
 
-func TestSettingsShowBundledToolVersions(t *testing.T) {
+func TestSettingsShowPlaybackToolVersions(t *testing.T) {
 	a := newTestApp()
 	a.router.Push("/settings")
 	tt := ui.NewTester(a.view, 1000, 5000)
 	tt.Frame()
 	tt.Frame()
 
-	if !tt.HasText("Bundled tools") {
+	if !tt.HasText("Playback tools") {
 		t.Fatalf("settings lack the tools card: %q", tt.Texts())
 	}
 	if tt.HasText("yt-dlp Looking up…") {

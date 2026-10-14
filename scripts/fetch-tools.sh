@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Gets the programs a release ships inside the app, ffmpeg and yt-dlp, into
-# resources/<platform>/, where `mygo build` picks them up. yt-dlp and QuickJS
-# are downloaded; ffmpeg is built by scripts/build-ffmpeg.sh.
+# Gets the programs a release ships inside the app into resources/<platform>/,
+# where `mygo build` picks them up. The default build gets ffmpeg, yt-dlp and
+# QuickJS; --minimal gets no tools and expects ffmpeg, yt-dlp, and Node.js or
+# Bun on PATH.
 #
 #   scripts/fetch-tools.sh darwin-arm64
+#   scripts/fetch-tools.sh --minimal darwin-arm64
 #
 # Platforms: darwin-arm64, darwin-amd64, linux-amd64, linux-arm64.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
-platform="${1:?usage: fetch-tools.sh <darwin-arm64|darwin-amd64|linux-amd64|linux-arm64>}"
+minimal=false
+if [[ "${1:-}" == --minimal ]]; then
+	minimal=true
+	shift
+fi
+platform="${1:?usage: fetch-tools.sh [--minimal] <darwin-arm64|darwin-amd64|linux-amd64|linux-arm64>}"
 
 # yt-dlp ships as the one-directory build: the one-file build unpacks itself to
 # a temporary directory on every launch, which costs about 0.4 s per resolve.
@@ -19,17 +26,19 @@ platform="${1:?usage: fetch-tools.sh <darwin-arm64|darwin-amd64|linux-amd64|linu
 # front, so one run names the version it fetched, and the checksums come from
 # that same release. The release workflow resolves the tag once and passes it
 # in, so every platform of a release bundles the same yt-dlp.
-YT_DLP_VERSION="${YT_DLP_VERSION:-latest}"
-if [[ "$YT_DLP_VERSION" == latest ]]; then
-	# /releases/latest redirects to /releases/tag/<tag>.
-	latest_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/yt-dlp/yt-dlp/releases/latest)"
-	YT_DLP_VERSION="${latest_url##*/}"
-	if [[ -z "$YT_DLP_VERSION" || "$YT_DLP_VERSION" == latest ]]; then
-		printf 'Could not find the latest yt-dlp release\n' >&2
-		exit 1
+if [[ "$minimal" == false ]]; then
+	YT_DLP_VERSION="${YT_DLP_VERSION:-latest}"
+	if [[ "$YT_DLP_VERSION" == latest ]]; then
+		# /releases/latest redirects to /releases/tag/<tag>.
+		latest_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/yt-dlp/yt-dlp/releases/latest)"
+		YT_DLP_VERSION="${latest_url##*/}"
+		if [[ -z "$YT_DLP_VERSION" || "$YT_DLP_VERSION" == latest ]]; then
+			printf 'Could not find the latest yt-dlp release\n' >&2
+			exit 1
+		fi
 	fi
+	ytdlp_url="https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}"
 fi
-ytdlp_url="https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}"
 
 # yt-dlp needs a JavaScript runtime to run the challenge solver scripts that
 # come with it. The app bundles QuickJS rather than depending on one the user
@@ -143,6 +152,16 @@ prune_ytdlp() { # bin platform
 		ln -s "${fw#"$bin/_internal/"}" "$bin/_internal/Python"
 	fi
 }
+
+if [[ "$minimal" == true ]]; then
+	# Reuse of a resource directory must not accidentally carry full-build
+	# tools into a minimal app.
+	rm -rf "$out/bin/ffmpeg" "$out/bin/yt-dlp" "$out/bin/_internal" \
+		"$out/bin/qjs" "$out/bin/.ffmpeg.stamp" "$out/bin/.yt-dlp.sha256" \
+		"$out/licenses/ffmpeg-COPYING.LGPLv3" "$out/licenses/quickjs-MIT.txt"
+	echo "ready in ${out}"
+	exit 0
+fi
 
 scripts/build-ffmpeg.sh "$platform"
 

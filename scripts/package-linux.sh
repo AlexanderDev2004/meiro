@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "usage: $0 linux-{amd64,arm64} VERSION ARTIFACTS_DIR" >&2
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "usage: $0 linux-{amd64,arm64} VERSION ARTIFACTS_DIR [minimal]" >&2
   exit 2
 fi
 
 platform=$1
 version=$2
 artifacts=$3
+variant=${4:-full}
 dist="dist/$platform"
 arch=${platform#linux-}
+
+if [[ "$variant" != full && "$variant" != minimal ]]; then
+  echo "unsupported build variant: $variant" >&2
+  exit 2
+fi
 
 case "$platform" in
   linux-amd64) appimage_arch=x86_64 ;;
@@ -91,3 +97,14 @@ chmod +x "$appdir/AppRun"
 APPIMAGETOOL_APP_NAME=Meiro VERSION="$version" ARCH="$appimage_arch" \
   "$APPIMAGETOOL" --appimage-extract-and-run --no-appstream \
     "$appdir" "$artifacts/Meiro-$version-linux-$arch.AppImage"
+
+if [[ "$variant" == minimal ]]; then
+  for file in "$artifacts"/*; do
+    [[ -f "$file" ]] || continue
+    if [[ "$file" == *.tar.gz ]]; then
+      mv "$file" "${file%.tar.gz}-minimal.tar.gz"
+    else
+      mv "$file" "${file%.*}-minimal.${file##*.}"
+    fi
+  done
+fi

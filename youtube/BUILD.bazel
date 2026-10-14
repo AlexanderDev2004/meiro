@@ -9,6 +9,7 @@ go_library(
         "library.go",
         "music.go",
         "orderedjson.go",
+        "playback.go",
         "playlists.go",
         "rating.go",
         "subscription.go",
@@ -27,6 +28,7 @@ go_test(
         "rating_test.go",
         "search_test.go",
         "subscription_test.go",
+        "upnext_test.go",
     ],
     embed = [":youtube"],
 )

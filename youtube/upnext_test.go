@@ -15,7 +15,7 @@ func TestGetUpNextSeedsALoneTrackWithItsOwnMix(t *testing.T) {
 		var payload map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		payloads = append(payloads, payload)
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
 	})}})
 	index := 3
 	for _, options := range []UpNextOptions{
@@ -45,7 +45,7 @@ func TestReportPlaybackPingsTheTrackingURL(t *testing.T) {
 		if r.Method == http.MethodGet {
 			ping, body = r, ""
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}})
 	if err := client.ReportPlayback(context.Background(), "vid"); err != nil {
 		t.Fatal(err)

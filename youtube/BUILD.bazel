@@ -20,6 +20,7 @@ go_library(
 go_test(
     name = "youtube_test",
     srcs = [
+        "credits_test.go",
         "integration_test.go",
         "library_test.go",
         "playlists_test.go",

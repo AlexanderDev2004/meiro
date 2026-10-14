@@ -35,9 +35,12 @@ internal/
   artwork/      downloads, decodes and keeps artwork within a memory budget
   cookies/      browser session import, the pasted Cookie header, the store
   history/      listening history, and the stats summary built from it
+  lastfm/       the Last.fm client, the outbox of undelivered scrobbles, and the
+                tracker that decides when a listen qualifies
   settings/     the user's settings, and the debounced Writer
   ytdlp/        running yt-dlp: resolving audio URLs, reading browser cookies
   proc/         finding bundled tools, hardened subprocesses, private temp files
+  credits/      who made each track, remembered by video ID between runs
   fsutil/       atomic writes
   lru/          a generic least-recently-used map
 ```

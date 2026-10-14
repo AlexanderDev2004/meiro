@@ -38,6 +38,7 @@ var settingsCards = []struct {
 	{"cache", (*app).playbackCacheCard},
 	{"desktop", (*app).desktopCard},
 	{"history", (*app).historyCard},
+	{"lastfm", (*app).lastFMCard},
 	{"updates", (*app).updatesCard},
 	{"tools", (*app).toolsCard},
 	{"report", (*app).reportCard},

@@ -69,6 +69,12 @@ type Settings struct {
 	// WavyProgress draws the position slider as a travelling wave while the
 	// music plays. The wave repaints the player on every frame.
 	WavyProgress bool `json:"wavyProgress"`
+	// LastFMUser is the Last.fm account plays are scrobbled to, or empty when
+	// none is connected. Its session key is not kept here: see
+	// lastfm.SessionStore.
+	LastFMUser string `json:"lastfmUser,omitempty"`
+	// LastFMPaused keeps the account connected and stops scrobbling.
+	LastFMPaused bool `json:"lastfmPaused,omitempty"`
 	// Shortcuts holds the keyboard shortcuts the user changed, by action ID
 	// (see package keymap), written as "Shift+Cmd+K". An action not listed
 	// keeps its default.

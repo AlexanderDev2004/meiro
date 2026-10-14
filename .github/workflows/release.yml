@@ -242,6 +242,17 @@ jobs:
             exit 1
           }
 
+      - name: Check the Last.fm application key
+        if: needs.gate.outputs.tag != ''
+        env:
+          MEIRO_LASTFM_API_KEY: ${{ secrets.MEIRO_LASTFM_API_KEY }}
+          MEIRO_LASTFM_SECRET: ${{ secrets.MEIRO_LASTFM_SECRET }}
+        run: |
+          test -n "$MEIRO_LASTFM_API_KEY" && test -n "$MEIRO_LASTFM_SECRET" || {
+            echo "The MEIRO_LASTFM_API_KEY and MEIRO_LASTFM_SECRET secrets are not both set; refusing to release an app that cannot connect to Last.fm."
+            exit 1
+          }
+
       # A universal macOS app is combined from both architecture directories,
       # so it takes both halves of the ffmpeg build.
       - uses: actions/download-artifact@v8
@@ -270,6 +281,8 @@ jobs:
           # build) the build still runs, unsigned. GH_TOKEN lets MyGo read
           # the published manifest to make delta updates.
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          MEIRO_LASTFM_API_KEY: ${{ secrets.MEIRO_LASTFM_API_KEY }}
+          MEIRO_LASTFM_SECRET: ${{ secrets.MEIRO_LASTFM_SECRET }}
           GH_TOKEN: ${{ github.token }}
         run: bazel run //:dist -- --out dist "${{ matrix.platform }}"
 
@@ -277,6 +290,8 @@ jobs:
         if: matrix.variant == 'minimal'
         env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          MEIRO_LASTFM_API_KEY: ${{ secrets.MEIRO_LASTFM_API_KEY }}
+          MEIRO_LASTFM_SECRET: ${{ secrets.MEIRO_LASTFM_SECRET }}
           GH_TOKEN: ${{ github.token }}
         run: bazel run //:dist -- --out dist --minimal "${{ matrix.platform }}"
 

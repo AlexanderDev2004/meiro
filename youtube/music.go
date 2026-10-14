@@ -46,6 +46,13 @@ type MusicItem struct {
 	// have none, which are nearly all of them, stay small: a page's rows copy
 	// them. Nothing changes what it points to; a change gives the item another.
 	Library *LibraryState `json:"-"`
+	// Artist is the first artist the item credits and Album the album, read
+	// from the links of its byline rather than from the flattened Subtitle,
+	// which also holds the kind, the year and the length. They are empty when
+	// the byline links none, and nothing reconstructs them from the Subtitle.
+	// They are strings, not a list, so that an item stays comparable.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 }
 
 // SearchResult contains the parsed music items of a search.
@@ -1141,6 +1148,7 @@ func parseMusicCardShelf(renderer *jsonObject) (MusicItem, bool) {
 		item.Subtitle = strings.TrimSuffix(item.Subtitle, " • "+duration)
 	}
 	item.BrowseID, item.VideoID = cardTarget(renderer)
+	item.Artist, item.Album = bylineCredits(renderer.get("subtitle"))
 	if item.VideoID != "" {
 		// A card of a song plays its video, and says so.
 		item.Kind = KindVideo
@@ -1221,6 +1229,70 @@ func rendererArtistBrowseID(renderer *jsonObject) string {
 	return artistBrowseEndpoint(columns[1])
 }
 
+// rendererCredits reads the artist and the album a track's byline links: the
+// subtitle of a two-row item, the second flex column of a list row, and the
+// bylines of a queue's panel item. Only linked runs count, so text that is
+// merely shown beside the artist, such as the kind of item or a year, is never
+// taken for a name.
+func rendererCredits(renderer *jsonObject) (artist, album string) {
+	sources := []any{renderer.get("subtitle"), renderer.get("longBylineText"), renderer.get("shortBylineText")}
+	if columns, ok := renderer.get("flexColumns").([]any); ok && len(columns) >= 2 {
+		if column, ok := columns[1].(*jsonObject); ok {
+			if flex, ok := column.get("musicResponsiveListItemFlexColumnRenderer").(*jsonObject); ok {
+				sources = append(sources, flex.get("text"))
+			}
+		}
+	}
+	for _, source := range sources {
+		if artist, album = bylineCredits(source); artist != "" {
+			return artist, album
+		}
+	}
+	return "", album
+}
+
+// bylineCredits reads the first artist and the album linked from the runs of
+// a byline.
+func bylineCredits(byline any) (artist, album string) {
+	object, ok := byline.(*jsonObject)
+	if !ok {
+		return "", ""
+	}
+	runs, _ := object.get("runs").([]any)
+	for _, value := range runs {
+		run, ok := value.(*jsonObject)
+		if !ok {
+			continue
+		}
+		text, _ := run.get("text").(string)
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		id := ""
+		if browse, ok := nestedObject(run.get("navigationEndpoint"), "browseEndpoint"); ok {
+			id, _ = browse.get("browseId").(string)
+		}
+		switch {
+		case isArtistID(id) && artist == "":
+			artist = text
+		case isAlbumID(id) && album == "":
+			album = text
+		}
+	}
+	return artist, album
+}
+
+// nestedObject is the object stored under name in the object value is.
+func nestedObject(value any, name string) (*jsonObject, bool) {
+	object, ok := value.(*jsonObject)
+	if !ok {
+		return nil, false
+	}
+	child, ok := object.get(name).(*jsonObject)
+	return child, ok
+}
+
 func artistBrowseEndpoint(value any) string {
 	switch node := value.(type) {
 	case []any:
@@ -1287,6 +1359,13 @@ func parseMusicItem(kind ItemKind, renderer *jsonObject) MusicItem {
 	if item.Subtitle == "" {
 		item.Subtitle = rendererColumnText(renderer, "flexColumns", 1)
 	}
+	if item.Subtitle == "" {
+		// The tracks of a queue name who made them in a byline, not a subtitle.
+		item.Subtitle = rendererText(renderer.get("longBylineText"))
+		if item.Subtitle == "" {
+			item.Subtitle = rendererText(renderer.get("shortBylineText"))
+		}
+	}
 	item.Duration = rendererText(renderer.get("lengthText"))
 	if item.Duration == "" {
 		item.Duration = rendererColumnText(renderer, "fixedColumns", 0)
@@ -1302,6 +1381,11 @@ func parseMusicItem(kind ItemKind, renderer *jsonObject) MusicItem {
 	item.VideoID, _ = renderer.get("videoId").(string)
 	if item.VideoID == "" {
 		item.VideoID = rendererVideoID(renderer)
+	}
+	if kind == KindTrack || kind == KindVideo || item.VideoID != "" {
+		// A two-row item is a song or a video when it carries a video, as the
+		// cards of a home shelf do; one without is an album or an artist.
+		item.Artist, item.Album = rendererCredits(renderer)
 	}
 	item.PlaylistID, _ = renderer.get("playlistId").(string)
 	item.PlaylistSetID = nestedString(renderer.get("playlistItemData"), "playlistSetVideoId")

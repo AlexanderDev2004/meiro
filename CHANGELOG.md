@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **Last.fm scrobbling.** Connect your account in Settings; Meiro then sends
+  what is playing and scrobbles each track once you have listened to half of
+  it, or four minutes. Pause scrobbling without disconnecting, and plays that
+  could not be sent are kept and retried, also after a restart.
+
 ## [0.1.0] - 2026-10-14
 
 The first release.

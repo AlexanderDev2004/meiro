@@ -48,6 +48,14 @@ and `bazel build --config=linux-arm64 //...` type-checks another release
 target. The CI workflow runs the same commands, and also builds every release
 target and validates the scripts and the workflows.
 
+Last.fm scrobbling needs an application key from
+[last.fm/api/account/create](https://www.last.fm/api/account/create). Without
+one the app runs and Settings says Last.fm cannot be connected. To try it, set
+`MEIRO_LASTFM_API_KEY` and `MEIRO_LASTFM_SECRET` before `bazel run //:dev`.
+`bazel run //:dist` bakes the same two variables into a build. The secret in a
+desktop app is not confidential, and the session key is what protects an
+account, so there is no backend.
+
 ## Make a focused change
 
 - Keep each pull request focused on one issue or closely related change.

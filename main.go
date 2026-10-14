@@ -83,6 +83,7 @@ func main() {
 		// Background work reaches the window through the desktop, so it
 		// starts only once the window is there.
 		a.restoreAccount()
+		a.loadScrobbleSession()
 		a.loadHistory()
 		a.startTicker()
 		a.every(persistInterval, func() { a.update(a.persistPlayback) })
@@ -90,6 +91,7 @@ func main() {
 		// keeps the freed memory for a while before it gives it back.
 		a.every(30*time.Second, debug.FreeOSMemory)
 		a.watchSession()
+		a.every(flushInterval, func() { a.update(a.flushScrobbles) })
 		a.desktop.win.OnClosed(a.stopTicking)
 	})
 	err := mygo.App.Run()
@@ -162,6 +164,8 @@ func (a *app) setup() {
 		a.account.creds.store = &cookies.FileStore{Path: filepath.Join(directory, "cookie.txt")}
 		a.historyPath = filepath.Join(directory, "history.json")
 		a.restorePlayback(filepath.Join(directory, "playback.json"))
+		a.openScrobbler(filepath.Join(directory, "lastfm-session.txt"), filepath.Join(directory, "lastfm-pending.json"))
+		a.openCredits(filepath.Join(directory, "credits.json"))
 	} else {
 		a.account.signIn.err = err.Error()
 	}
@@ -229,6 +233,8 @@ func (a *app) shutdown() {
 	a.saver.Wait()
 	a.historyWriter.Wait()
 	a.playSave.writer.Wait()
+	a.scrobble.outbox.Wait()
+	a.scrobble.credits.Wait()
 	a.desktop.close()
 	if a.media != nil {
 		if err := a.media.Close(); err != nil {

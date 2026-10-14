@@ -1,0 +1,24 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "lastfm",
+    srcs = [
+        "client.go",
+        "listen.go",
+        "outbox.go",
+        "session.go",
+    ],
+    importpath = "github.com/elianiva/meiro/internal/lastfm",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/fsutil"],
+)
+
+go_test(
+    name = "lastfm_test",
+    srcs = [
+        "client_test.go",
+        "listen_test.go",
+        "outbox_test.go",
+    ],
+    embed = [":lastfm"],
+)

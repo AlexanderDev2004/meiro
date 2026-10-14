@@ -54,6 +54,8 @@ type app struct {
 	playSave playbackSave
 
 	account accountState
+	// scrobble is the Last.fm connection and the plays waiting for it.
+	scrobble scrobbler
 	// keyboard is the shortcuts, and the recording of a new one.
 	keyboard keyboardState
 	// openPath shows a file or folder in the system; tests replace it.
@@ -159,6 +161,7 @@ func newApp() *app {
 		statsRange: 14,
 		keyboard:   keyboardState{hintDelay: hintDelay},
 	}
+	a.scrobble = newScrobbler()
 	a.playback = newPlayback(audio.NewURLs(ytdlp.Resolve), a.settings.Volume)
 	a.cacheSongsText = strconv.Itoa(a.settings.CacheSongs)
 	a.run = func(work func()) {

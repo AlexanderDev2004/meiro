@@ -103,6 +103,9 @@ func (a *app) playFrom(item youtube.MusicItem, tracks []youtube.MusicItem, index
 		return
 	}
 	a.queue.replace(item, tracks, index, source)
+	clear(a.scrobble.queued) // the queue they were added to is gone
+	a.learnCredits(tracks...)
+	a.learnCredits(item)
 	options.VideoID = item.VideoID
 	a.resetUpNext(options)
 	if a.loading() && a.current.VideoID == item.VideoID {
@@ -196,7 +199,14 @@ const maxSkips = 3
 // start makes item the current track and finds its audio.
 func (a *app) start(item youtube.MusicItem) {
 	a.skipped = 0
-	a.startTrack(item)
+	a.startTrack(item, false)
+}
+
+// startNext makes item, which the queue chose, the current track. Last.fm is
+// told the listener did not pick it, unless they queued it.
+func (a *app) startNext(item youtube.MusicItem) {
+	a.skipped = 0
+	a.startTrack(item, true)
 }
 
 // skipUnplayable moves on to the next track after item failed to play, unless
@@ -212,12 +222,13 @@ func (a *app) skipUnplayable(item youtube.MusicItem) {
 	}
 	a.skipped++
 	a.notice = "Skipped " + item.Title + ": " + strings.TrimSuffix(a.playErr, ".")
-	a.startTrack(a.queue.moveTo(next))
+	a.startTrack(a.queue.moveTo(next), true)
 }
 
-// startTrack is start without ending a run of skipped tracks.
-func (a *app) startTrack(item youtube.MusicItem) {
-	startAt, changed := a.enterTrack(item)
+// startTrack is start without ending a run of skipped tracks. automatic says
+// the queue chose item, rather than the listener.
+func (a *app) startTrack(item youtube.MusicItem, automatic bool) {
+	startAt, changed := a.enterTrack(item, automatic)
 	// The old stream is stopped by the work that finds the new one: stopping
 	// kills ffmpeg and waits for the audio device, which is not for the main
 	// thread to do.
@@ -227,7 +238,7 @@ func (a *app) startTrack(item youtube.MusicItem) {
 
 // enterTrack makes item the current track, and says where in it to start and
 // whether it is another track than the one before.
-func (a *app) enterTrack(item youtube.MusicItem) (time.Duration, bool) {
+func (a *app) enterTrack(item youtube.MusicItem, automatic bool) (time.Duration, bool) {
 	a.recoveries = 0
 	changed := a.current.VideoID != item.VideoID
 	a.current = item
@@ -245,6 +256,9 @@ func (a *app) enterTrack(item youtube.MusicItem) (time.Duration, bool) {
 	// What was being readied was for the track after the old one.
 	a.preload.stop()
 	a.preloaded, a.preloadFailed = preloadedAudio{}, ""
+	// Entering a track is not playing it: Last.fm hears of it once playback
+	// is confirmed, which the polls see.
+	a.beginListen(item, automatic)
 	return startAt, changed
 }
 
@@ -395,7 +409,7 @@ func (a *app) followed(tag string) {
 	if i >= 0 {
 		item = a.queue.moveTo(i)
 	}
-	_, changed := a.enterTrack(item)
+	_, changed := a.enterTrack(item, true)
 	if found.total > 0 {
 		a.total = found.total
 	}
@@ -612,6 +626,8 @@ func (a *app) ensureUpNext() {
 			u.options.PlaylistID = result.QueuePlaylistID
 		}
 		a.learnLikes(result.Items)
+		// The first page holds the track playing, with its full byline.
+		a.learnCredits(result.Items...)
 		u.token = result.ContinuationToken
 		if u.token == continuation {
 			u.token = ""
@@ -668,6 +684,8 @@ func (a *app) enqueue(item youtube.MusicItem, playNext bool) {
 		return
 	}
 	a.queue.insert(item, playNext, a.settings.AutoPlay)
+	a.rememberQueued(item.VideoID)
+	a.learnCredits(item)
 	if playNext {
 		a.notice = item.Title + " will play next"
 	} else {
@@ -802,6 +820,7 @@ func (a *app) poll() {
 		if a.recoveries > 0 && a.player.Position() > a.recoveredFrom+recoveryHealthy {
 			a.recoveries = 0 // it held, so the next break gets all its tries
 		}
+		a.observeListen()
 		a.syncPreload()
 		a.ensureUpNext()
 		if !a.scrubbing {
@@ -815,7 +834,7 @@ func (a *app) poll() {
 // one, or stops at the end of the queue.
 func (a *app) trackEnded() {
 	if a.repeat == repeatTrack {
-		a.start(a.current)
+		a.startNext(a.current)
 		return
 	}
 	a.advance()
@@ -825,7 +844,7 @@ func (a *app) trackEnded() {
 // its end when auto-play is on.
 func (a *app) advance() {
 	if next, ok := a.queue.next(a.settings.AutoPlay, a.repeat); ok {
-		a.start(a.queue.moveTo(next))
+		a.startNext(a.queue.moveTo(next))
 		return
 	}
 	if a.settings.AutoPlay {
@@ -866,6 +885,7 @@ func (a *app) previous() {
 // way at a time, and a position asked for while one is on its way is the one
 // the next, and last, seek applies.
 func (a *app) seek(position time.Duration) {
+	a.scrobble.listen.Break() // the position jumps; what it jumps over was not heard
 	a.seekTarget = position
 	if !a.seeking.busy() {
 		a.applySeek()

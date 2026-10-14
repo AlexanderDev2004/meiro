@@ -78,6 +78,23 @@ for fetch_platform in "${fetch_platforms[@]}"; do
 	fi
 done
 
+# The Last.fm application key and secret are baked into the app. `mygo build`
+# sets its own -ldflags, so they cannot be passed with -X; a generated file
+# sets them instead, and goes when the build is done. Without them the app
+# builds, and its Settings say Last.fm cannot be connected.
+lastfm_keys=lastfmkeys_gen.go
+trap 'rm -f "$lastfm_keys"' EXIT
+if [[ -n "${MEIRO_LASTFM_API_KEY:-}" || -n "${MEIRO_LASTFM_SECRET:-}" ]]; then
+	for value in "${MEIRO_LASTFM_API_KEY:-}" "${MEIRO_LASTFM_SECRET:-}"; do
+		if [[ ! "$value" =~ ^[A-Za-z0-9]+$ ]]; then
+			echo "MEIRO_LASTFM_API_KEY and MEIRO_LASTFM_SECRET must both be set, to letters and digits only" >&2
+			exit 2
+		fi
+	done
+	printf 'package main\n\nfunc init() { lastFMAPIKey, lastFMSecret = "%s", "%s" }\n' \
+		"$MEIRO_LASTFM_API_KEY" "$MEIRO_LASTFM_SECRET" >"$lastfm_keys"
+fi
+
 build=(build -platform "${platform/-//}")
 if [[ -n "$out" ]]; then
 	build+=(-o "$out")

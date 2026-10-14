@@ -201,6 +201,8 @@ See the [open issues](https://github.com/elianiva/meiro/issues) for the rest.
 Meiro has no account, analytics or telemetry of its own, and no server of its
 own. Its network traffic goes to YouTube and Google (the YouTube Music
 interface, the streams, the artwork), and, to find streams, through yt-dlp.
+If you connect Last.fm in Settings, it also sends what you play there, and
+only then.
 Releases that update themselves also contact their update server to check for
 a new version; turn that off in Settings under Updates.
 
@@ -212,6 +214,11 @@ What Meiro keeps on your device:
   there is none, in a file readable only by your user. **Sign out** removes it.
   The session has the same access to your account as the browser session it
   came from, so treat it like a password.
+- **Your Last.fm session**, if you connect Last.fm, in a file readable only by
+  your user, apart from the settings, which hold only the account's name. Meiro
+  never sees your Last.fm password: you approve it on Last.fm's own page.
+  Plays that could not be sent wait in a file beside it. **Disconnect** deletes
+  both.
 - **Cached audio and artwork**, in the cache folder you chose. Set the audio
   limit to `0` to turn the audio cache off.
 - **Logs**, with secrets removed, in the logs folder.

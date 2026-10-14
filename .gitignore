@@ -9,4 +9,5 @@ mygo_windows_*.syso
 /resources/linux-*/
 /resources/windows-*/
 /meiro
+/lastfmkeys_gen.go
 /bazel-*

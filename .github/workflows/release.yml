@@ -222,17 +222,18 @@ jobs:
           jq --arg v "$version" '.version = $v' mygo.json > mygo.json.new
           mv mygo.json.new mygo.json
 
-      # Only the full build is the app's update channel. A minimal build
-      # would write the same update files and, with the feed baked in,
-      # replace itself with the full app, so it is built without updates.
-      - name: Leave updates out of the minimal build
+      # A minimal build updates to minimal builds. The feed MyGo bakes in
+      # is named only by the platform, so the same prefix would hand the
+      # full app to minimal installs. Their update files go to a release of
+      # their own, tagged desktop-minimal-v<version>.
+      - name: Point the minimal build at its own updates
         if: matrix.variant == 'minimal'
         run: |
-          jq 'del(.updates)' mygo.json > mygo.json.new
+          jq '.updates.tagPrefix = "desktop-minimal-v"' mygo.json > mygo.json.new
           mv mygo.json.new mygo.json
 
       - name: Check the update signing key
-        if: matrix.variant == 'full' && needs.gate.outputs.tag != ''
+        if: needs.gate.outputs.tag != ''
         env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: |
@@ -274,6 +275,9 @@ jobs:
 
       - name: Build minimal
         if: matrix.variant == 'minimal'
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: bazel run //:dist -- --out dist --minimal "${{ matrix.platform }}"
 
       - name: Set up Linux package tools
@@ -302,21 +306,28 @@ jobs:
               scripts/package-linux.sh "${{ matrix.platform }}" "$VERSION" artifacts "${{ matrix.variant }}"
               ;;
           esac
-          # The signed update archive, deltas and manifest are the full
-          # build's. Linux packaging already copied its archive.
-          if [ "${{ matrix.variant }}" = full ]; then
-            find "dist/${{ matrix.platform }}" -maxdepth 1 -type f \
-              \( -name 'update-*.json' -o -name '*.delta' \) -exec cp {} artifacts/ \;
-            case "${{ matrix.platform }}" in
-              darwin-*) find "dist/${{ matrix.platform }}" -maxdepth 1 -type f -name '*.tar.gz' -exec cp {} artifacts/ \; ;;
-            esac
-          fi
-          ls -la artifacts
+          # The signed update archive, deltas and manifest. The full
+          # build's go with its installers; the minimal build's have the
+          # same names, so they stay apart for the release of their own.
+          # The archive keeps its name, which the manifest points at.
+          updates=artifacts
+          if [ "${{ matrix.variant }}" = minimal ]; then updates=minimal-updates; fi
+          mkdir -p "$updates"
+          find "dist/${{ matrix.platform }}" -maxdepth 1 -type f \
+            \( -name 'update-*.json' -o -name '*.delta' -o -name '*.tar.gz' \) -exec cp {} "$updates/" \;
+          ls -la artifacts "$updates"
 
       - uses: actions/upload-artifact@v5
         with:
           name: meiro-${{ matrix.platform }}-${{ matrix.variant }}
           path: artifacts/*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v5
+        if: matrix.variant == 'minimal'
+        with:
+          name: minimal-updates-${{ matrix.platform }}
+          path: minimal-updates/*
           if-no-files-found: error
 
   release:
@@ -328,7 +339,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v5
         with:
+          pattern: meiro-*
           path: artifacts
+          merge-multiple: true
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: minimal-updates-*
+          path: minimal-updates
           merge-multiple: true
       - name: Checksums
         run: cd artifacts && sha256sum ./* > SHA256SUMS.txt && cat SHA256SUMS.txt
@@ -340,3 +357,15 @@ jobs:
           # Not latest: the app finds desktop releases by their tag prefix.
           gh release create "${{ needs.gate.outputs.tag }}" artifacts/* \
             --title "Meiro ${{ needs.gate.outputs.version }}" --generate-notes --verify-tag --latest=false
+      # The minimal build's update files, apart from the downloads: its own
+      # release, which never becomes latest, tagged for its feed.
+      - name: Publish the minimal updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${{ needs.gate.outputs.version }}"
+          gh release create "desktop-minimal-v$version" minimal-updates/* \
+            --title "Meiro $version minimal updates" \
+            --notes "Update files for the minimal builds of desktop-v$version. Download Meiro from that release." \
+            --target "${{ needs.gate.outputs.sha }}" --latest=false

@@ -48,9 +48,10 @@ mygo-update.key`). MyGo reads the key from that variable.
 
 CI does this when you push a `desktop-v0.2.0` tag (after adding the changelog
 section): `release.yml` signs the full builds, writes the update files and
-publishes the release, not marked latest. The minimal builds are built
-without updates, so they never replace themselves with a full build. The
-steps below are the same release by hand.
+publishes the release, not marked latest. Minimal builds update to minimal
+builds: their update files go to a second release, `desktop-minimal-v0.2.0`,
+because the feed a build bakes in is named only by its platform. The steps
+below are the full build's release by hand.
 
 1. Add a `## 0.2.0` section to [`CHANGELOG.md`](../CHANGELOG.md). It
    becomes the release notes of the update window.

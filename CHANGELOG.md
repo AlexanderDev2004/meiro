@@ -8,15 +8,7 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Changed
-
-- **Keyboard shortcuts**: avoid arrow-key playback and volume defaults that
-  conflict with text navigation; show overlay hints only for shortcuts using
-  the held Cmd/Ctrl modifier.
-
-## [0.1.0]
-
-<!-- Add the release date when desktop-v0.1.0 is tagged: ## [0.1.0] - YYYY-MM-DD -->
+## [0.1.0] - 2026-10-14
 
 The first release.
 

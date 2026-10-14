@@ -6,14 +6,16 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// hueSteps is how many bands paint the hue slider's spectrum; hueStrip holds
-// their colours, derived once rather than on every paint.
-const hueSteps = 144
+// hueSteps is how many gradients paint the hue slider's spectrum, one per
+// span between two stops of hueStrip, which holds the colours of the stops,
+// derived once rather than on every paint. A band per colour would be a
+// hundred and more quads in every frame of the page.
+const hueSteps = 24
 
-var hueStrip = func() [hueSteps]ui.Color {
-	var strip [hueSteps]ui.Color
+var hueStrip = func() [hueSteps + 1]ui.Color {
+	var strip [hueSteps + 1]ui.Color
 	for i := range strip {
-		strip[i] = FromHue(float64(i) * 360 / hueSteps)
+		strip[i] = FromHue(float64(i%hueSteps) * 360 / hueSteps)
 	}
 	return strip
 }()
@@ -109,7 +111,8 @@ func Slider(c *ui.Context, value *float64, lo, hi float64, spec SliderSpec) ui.E
 			p.Clip(track, radius, func() {
 				w := track.W / hueSteps
 				for i := range hueSteps {
-					p.Fill(ui.Rect{X: track.X + w*float32(i), Y: track.Y, W: w + 0.75, H: track.H}, hueStrip[i], 0)
+					p.FillGradient(ui.Rect{X: track.X + w*float32(i), Y: track.Y, W: w + 0.75, H: track.H},
+						ui.LinearGradient{From: hueStrip[i], To: hueStrip[i+1], Angle: 90, Oklab: true}, 0)
 				}
 			})
 			p.Fill(ui.Rect{X: hx - 3, Y: cy - handleH/2, W: 6, H: handleH}, sc.Surface, 3)

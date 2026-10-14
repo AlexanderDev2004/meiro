@@ -66,6 +66,9 @@ type pageData struct {
 	// still rebuilds them.
 	rowsDirty bool
 	rowsKey   rowsKey
+	// list is where the page is scrolled to, kept with it so that going back
+	// to a page shows it where it was left.
+	list *ui.ListState
 }
 
 // fresh reports whether a kept page can be shown as it is.
@@ -136,20 +139,22 @@ func (a *app) onNavigate() {
 	if r.id == routeSearch {
 		a.focusSearch = a.search.submitted == ""
 	}
-	if page, ok := a.pages.Get(location); ok && (r.id == routeSearch || page.fresh(time.Now())) {
-		a.page = page
+	if page, ok := a.pages.Get(location); ok && (r.id == routeSearch || r.load == nil || page.fresh(time.Now())) {
+		// A page kept comes back where it was scrolled to. One with nothing
+		// to load has nothing to go stale.
+		a.page, a.list = page, page.list
 		return
-	}
-	a.page = &pageData{rowsDirty: true}
-	a.pages.Delete(location)
-	if r.isDetail() {
-		a.page.detail, _ = a.details.Get(a.path())
 	}
 	// The list is shared by every page, so a new page starts at its top.
 	// A new state, not a reset one: the frame of the old one is still read by
 	// the accessibility tree built from the last frame.
 	a.list = &ui.ListState{}
 	a.list.ScrollTo(0, ui.Start)
+	a.page = &pageData{rowsDirty: true, list: a.list}
+	a.pages.Delete(location)
+	if r.isDetail() {
+		a.page.detail, _ = a.details.Get(a.path())
+	}
 	if r.load != nil && (r.needsAccount == nil || a.signedIn()) {
 		a.loadPage(r, id)
 	}

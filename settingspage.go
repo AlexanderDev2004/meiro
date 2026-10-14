@@ -29,23 +29,40 @@ var swatches = []struct{ name, hex string }{
 	{"Orchid", "#a73fc0"},
 }
 
+// settingsCards are the cards of the settings page, top to bottom.
+var settingsCards = []struct {
+	key  string
+	card func(a *app, c *ui.Context)
+}{
+	{"appearance", (*app).appearanceCard},
+	{"cache", (*app).playbackCacheCard},
+	{"desktop", (*app).desktopCard},
+	{"history", (*app).historyCard},
+	{"updates", (*app).updatesCard},
+	{"tools", (*app).toolsCard},
+	{"report", (*app).reportCard},
+	{"account", (*app).accountCard},
+	{"keyboard", (*app).keyboardCard},
+	{"logs", (*app).logsCard},
+}
+
 // settingsPage is where the user chooses the colours of the app and manages
 // the account. Every control here restyles the whole window as it is used.
+//
+// The cards are the rows of a list, so only the ones in view are built, laid
+// out and painted: the page is long, and scrolling it rebuilds the frame.
 func (a *app) settingsPage(c *ui.Context) {
-	ui.Scroll(c).Grow(1).Padding(0, pageGutter, a.clearance()).Children(func() {
-		ui.Column(c).Gap(16).Children(func() {
-			a.appearanceCard(c)
-			a.playbackCacheCard(c)
-			a.desktopCard(c)
-			a.historyCard(c)
-			a.updatesCard(c)
-			a.toolsCard(c)
-			a.reportCard(c)
-			a.accountCard(c)
-			a.keyboardCard(c)
-			a.logsCard(c)
+	a.list.Key = func(i int) any {
+		if i >= len(settingsCards) {
+			return nil
+		}
+		return settingsCards[i].key
+	}
+	ui.List(c, a.list, len(settingsCards), func(i int) {
+		ui.Column(c).FillWidth().Padding(0, pageGutter, 16).Children(func() {
+			settingsCards[i].card(a, c)
 		})
-	})
+	}).Grow(1).Padding(0, 0, a.clearance()-16)
 }
 
 // settingsCard is a tonal card that holds one group of settings.

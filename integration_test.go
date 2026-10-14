@@ -866,3 +866,22 @@ func TestSettingsShowPlaybackToolVersions(t *testing.T) {
 		t.Error("opening settings did not read the tool versions")
 	}
 }
+
+func TestGoingBackRestoresWhereAPageWasScrolled(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/settings")
+	tt := ui.NewTester(a.view, 1000, 500)
+	tt.Frame()
+	tt.Scroll(500, 300, 0, 1500)
+	tt.Frame()
+	if first, _ := a.list.Visible(); first == 0 {
+		t.Fatal("settings did not scroll")
+	}
+	a.navigate(routeStats)
+	tt.Frame()
+	a.router.Back()
+	tt.Frame()
+	if first, _ := a.list.Visible(); a.router.Path() != "/settings" || first == 0 {
+		t.Fatalf("settings did not come back where it was left: first row %d at %q", first, a.router.Path())
+	}
+}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -348,7 +350,7 @@ func TestRefusedSessionStaysSignedOut(t *testing.T) {
 	if a.signedIn() {
 		t.Fatal("a session YouTube refuses signed the user in")
 	}
-	if !strings.Contains(a.notice, "Could not restore") {
+	if !strings.Contains(a.notice, "session expired") {
 		t.Errorf("the refusal was not surfaced: %q", a.notice)
 	}
 }
@@ -421,5 +423,95 @@ func TestReportProblemOpensPrefilledIssue(t *testing.T) {
 		if !strings.Contains(q.Get("tools"), want) {
 			t.Errorf("tools lack %q: %q", want, q.Get("tools"))
 		}
+	}
+}
+
+// rejectingMusic answers every request the way YouTube answers a session it
+// no longer accepts.
+type rejectingMusic struct{}
+
+func (rejectingMusic) RoundTrip(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    request,
+	}, nil
+}
+
+func TestRejectedSessionAsksToSignInAgain(t *testing.T) {
+	a := newTestApp()
+	a.account.newClient = func(auth *youtube.CookieAuth) *youtube.Client {
+		return youtube.NewClient(youtube.Options{
+			APIKey:     "test",
+			CookieAuth: auth,
+			HTTPClient: &http.Client{Transport: rejectingMusic{}},
+		})
+	}
+	auth, err := youtube.NewCookieAuth("SAPISID=stale", youtube.CookieOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.account.session = &session{client: a.account.newClient(auth), cookie: "SAPISID=stale"}
+	a.router.Push("/library")
+	tt := ui.NewTester(a.view, 1000, 700)
+	tt.Frame()
+	tt.Frame()
+	if a.signedIn() {
+		t.Fatal("a rejected session is still in use")
+	}
+	if !tt.HasText("Your session expired") || !tt.HasText("Sign in again to see your songs, albums and playlists.") {
+		t.Fatalf("the library does not ask to sign in again: %q", tt.Texts())
+	}
+	if err := tt.Click("Sign in"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !a.account.signIn.open {
+		t.Error("Sign in did not open the dialog")
+	}
+}
+
+// A browser that cannot be read leaves the sign-in dialog pointing at the
+// Cookie header, with where to copy it from, and a pasted one signs in.
+func TestFailedBrowserImportOffersPastingTheCookieHeader(t *testing.T) {
+	a := newTestApp()
+	a.account.sources = func() []cookies.Source {
+		return []cookies.Source{{Label: "Fakefox", Read: func(context.Context) (string, error) {
+			return "", errors.New("no profile found")
+		}}}
+	}
+	a.account.newClient = func(auth *youtube.CookieAuth) *youtube.Client {
+		return youtube.NewClient(youtube.Options{
+			APIKey:     "test",
+			CookieAuth: auth,
+			HTTPClient: &http.Client{Transport: refusingMusic{fresh: "SAPISID=pasted"}},
+		})
+	}
+	a.openSignIn()
+	tt := ui.NewTester(a.view, 1000, 900)
+	tt.Frame()
+	if !tt.HasText("To paste it:") {
+		t.Fatalf("the dialog does not say where to copy the header from: %q", tt.Texts())
+	}
+	if tt.HasText("Importing from Fakefox did not work. Paste the Cookie header instead.") {
+		t.Fatal("the fallback is announced before any import failed")
+	}
+	if err := tt.Click("Import from a browser"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Fakefox"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText("Importing from Fakefox did not work. Paste the Cookie header instead.") || !tt.HasText("no profile found") {
+		t.Fatalf("the failed import did not point at the Cookie header: %q", tt.Texts())
+	}
+	a.account.signIn.cookie = "SAPISID=pasted; other=1"
+	a.submitSignIn()
+	tt.Frame()
+	if !a.signedIn() || a.account.signIn.open {
+		t.Errorf("the pasted header did not sign in: signedIn=%v open=%v err=%q", a.signedIn(), a.account.signIn.open, a.account.signIn.err)
 	}
 }

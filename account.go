@@ -45,6 +45,11 @@ type accountState struct {
 
 	// session is the account in use, nil while signed out.
 	session *session
+	// expired is why the session ended when YouTube stopped accepting it, ""
+	// otherwise. Pages that need an account say it in place of the plain
+	// invitation to sign in, until a session is in use again or the user
+	// signs out.
+	expired string
 	creds   credentials
 	signIn  signInState
 
@@ -198,6 +203,9 @@ func (s *accountState) openSession(ctx context.Context, cookie, channel string) 
 		}
 		client := s.newClient(auth)
 		details, err := client.GetAccountDetails(ctx)
+		if errors.Is(err, youtube.ErrUnauthorized) {
+			return nil, errSessionGone
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -266,6 +274,7 @@ func (s *accountState) renewSession(ctx context.Context, cookie string, from ses
 func (a *app) useSession(s *session, from sessionSource) {
 	a.stopAccountWork()
 	a.account.session = s
+	a.account.expired = ""
 	a.account.signIn.err = ""
 	if a.settings.Channel != s.channel || a.settings.SignInSource != from.browser {
 		a.settings.Channel, a.settings.SignInSource = s.channel, from.browser
@@ -292,6 +301,7 @@ func (a *app) endSession(reason string) {
 	a.stopAccountWork()
 	had := a.account.session != nil
 	a.account.session = nil
+	a.account.expired = ""
 	a.account.signIn.err = reason
 	if reason != "" {
 		a.notice = reason
@@ -299,6 +309,17 @@ func (a *app) endSession(reason string) {
 	if had {
 		a.accountChanged()
 	}
+}
+
+// sessionExpiredNotice is what the user is told when YouTube stops accepting
+// their session and the browser it came from cannot replace it.
+const sessionExpiredNotice = "Your session expired. Sign in again."
+
+// expireSession ends a session YouTube no longer accepts, and makes the pages
+// that need an account ask the user to sign in again.
+func (a *app) expireSession() {
+	a.endSession(sessionExpiredNotice)
+	a.account.expired = sessionExpiredNotice
 }
 
 // stopAccountWork drops the background work of the account being left.
@@ -339,6 +360,8 @@ func (a *app) restoreAccount() {
 	}, func(s *session, err error) {
 		switch {
 		case errors.Is(err, cookies.ErrNotSaved):
+		case errors.Is(err, errSessionGone):
+			a.expireSession()
 		case err != nil:
 			a.endSession("Could not restore your YouTube Music session: " + err.Error())
 		default:
@@ -382,7 +405,7 @@ func (a *app) checkSession() {
 			// YouTube no longer takes the session, and the browser it came
 			// from could not replace it: say so rather than show pages the
 			// account no longer has.
-			a.endSession("Could not restore your YouTube Music session: " + err.Error())
+			a.expireSession()
 		}
 		// A request that failed for another reason says nothing about the
 		// session; the next check tries again.
@@ -453,13 +476,16 @@ type signInState struct {
 	cookie string
 	// browsers is the menu of browsers to import from.
 	browsers bool
+	// importFailed is the browser a session could not be imported from, so the
+	// dialog points at pasting the Cookie header instead; "" otherwise.
+	importFailed string
 	// try checks a pasted or imported session; it is busy while it does.
 	try task
 }
 
 // reset empties the dialog. Its task is the caller's to stop.
 func (s *signInState) reset() {
-	s.open, s.err, s.attempt, s.cookie, s.browsers = false, "", 0, "", false
+	s.open, s.err, s.attempt, s.cookie, s.browsers, s.importFailed = false, "", 0, "", false, ""
 }
 
 // openSignIn opens the dialog that takes the cookie of the user's browser
@@ -535,7 +561,7 @@ func (a *app) importSignIn(browser cookies.Source) {
 func (a *app) trySignIn(from sessionSource, read func(context.Context) (string, error)) {
 	acc := &a.account
 	s := &acc.signIn
-	s.err = ""
+	s.err, s.importFailed = "", ""
 	attempt := s.attempt
 	startTask(a, &s.try, signInTimeout, func(ctx context.Context) (*session, error) {
 		cookie, err := read(ctx)
@@ -550,6 +576,7 @@ func (a *app) trySignIn(from sessionSource, read func(context.Context) (string, 
 	}, func(opened *session, err error) {
 		if err != nil {
 			s.err = err.Error()
+			s.importFailed = from.browser
 			return
 		}
 		s.reset()

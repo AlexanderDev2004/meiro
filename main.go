@@ -47,6 +47,7 @@ func main() {
 	// megabytes.
 	debug.SetGCPercent(50)
 	stopMemprof := memprof.Start(15 * time.Second)
+	proc.ExtendPath()
 	proc.SweepTemp()
 	// A second launch hands its work to the running app instead of starting
 	// another player with its own audio.

@@ -1,8 +1,9 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "proc",
     srcs = [
+        "path.go",
         "proc.go",
         "proc_unix.go",
         "proc_windows.go",
@@ -12,4 +13,10 @@ go_library(
     importpath = "github.com/elianiva/meiro/internal/proc",
     visibility = ["//:__subpackages__"],
     deps = ["@com_github_egoist_mygo//:mygo"],
+)
+
+go_test(
+    name = "proc_test",
+    srcs = ["path_test.go"],
+    embed = [":proc"],
 )

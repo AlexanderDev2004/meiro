@@ -25,6 +25,11 @@ and this project adheres to
   holds what is typed. Play, Shuffle and a song's own place still use the whole
   playlist, so a match plays from where it sits in it.
 
+### Changed
+
+- macOS releases are one universal download that runs on Apple Silicon and
+  Intel, instead of a separate download for each.
+
 ## [0.1.0]
 
 <!-- Add the release date when v0.1.0 is tagged: ## [0.1.0] - YYYY-MM-DD -->

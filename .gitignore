@@ -1,4 +1,5 @@
 /build/
+/dist/
 *.test
 /.mygo/
 mygo_windows_*.syso
@@ -8,3 +9,4 @@ mygo_windows_*.syso
 /resources/linux-*/
 /resources/windows-*/
 /meiro
+/bazel-*

@@ -1,0 +1,239 @@
+load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# Gazelle writes and updates every BUILD file under the workspace, so the Go
+# targets stay in step with go.mod and the packages on disk.
+gazelle_binary(
+    name = "gazelle_binary",
+    languages = ["@gazelle//language/go"],
+)
+
+gazelle(
+    name = "gazelle",
+    gazelle = ":gazelle_binary",
+)
+
+# bazel run //:gazelle_update_repos follows go.mod into MODULE.bazel.
+gazelle(
+    name = "gazelle_update_repos",
+    command = "update-repos",
+    gazelle = ":gazelle_binary",
+)
+
+# --- The commands a contributor runs -----------------------------------------
+#
+# One Bazel command stands in for each recipe the justfile used to hold. They
+# arrange work rather than check it: they need the network, the host
+# toolchain, or the platform's own packaging tools, so they run outside the
+# sandbox. The checks are the go_test targets, which `bazel test` runs
+# hermetically and caches.
+#
+# They are also shell commands for the machine you run Bazel on, so they carry
+# the host-only tag: a release-target build leaves them out (see .bazelrc),
+# where building one for a Windows target platform would ask for the launcher
+# rules_shell makes for it, which wants a C++ toolchain this project does not
+# carry.
+
+# Live reload: `bazel run //:dev`.
+sh_binary(
+    name = "dev",
+    srcs = ["//tools:workspace.sh"],
+    args = [
+        "go",
+        "tool",
+        "mygo",
+        "dev",
+    ],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+# The playback tools a full build ships: `bazel run //:fetch-tools -- linux-amd64`.
+# (The name cannot be `tools`: a target of that name in the root package would
+# collide with the tools/ package's output directory.)
+sh_binary(
+    name = "fetch-tools",
+    srcs = ["//tools:workspace.sh"],
+    args = ["scripts/fetch-tools.sh"],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+# Format in place: `bazel run //:format`.
+sh_binary(
+    name = "format",
+    srcs = ["//tools:format.sh"],
+    args = ["$(rootpath @gofumpt//:gofumpt)"],
+    data = ["@gofumpt//:gofumpt"],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+# Fail when a file is not formatted: `bazel run //:format-check`. It walks the
+# workspace rather than a Bazel file list, because a glob stops at a package
+# boundary and every directory of Go files here is its own package.
+sh_binary(
+    name = "format-check",
+    srcs = ["//tools:format.sh"],
+    args = [
+        "$(rootpath @gofumpt//:gofumpt)",
+        "--check",
+    ],
+    data = ["@gofumpt//:gofumpt"],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+# Lint with the pinned golangci-lint: `bazel run //:lint`.
+sh_binary(
+    name = "lint",
+    srcs = ["//tools:lint.sh"],
+    args = ["$(rootpath @golangci_lint//:bin)"],
+    data = ["@golangci_lint//:bin"],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+# Check go.mod and go.sum: `bazel run //:tidy`. go.mod is still where the Go
+# dependencies are written down, so it has to stay tidy for //:gazelle to
+# follow it.
+sh_binary(
+    name = "tidy",
+    srcs = ["//tools:workspace.sh"],
+    args = [
+        "go",
+        "mod",
+        "tidy",
+        "-diff",
+    ],
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "dist",
+    actual = "//tools:dist",
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "clean",
+    actual = "//tools:clean",
+    tags = ["host-only"],
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "meiro_lib",
+    srcs = [
+        "account.go",
+        "accountview.go",
+        "app.go",
+        "browse.go",
+        "crash.go",
+        "desktop.go",
+        "fonts.go",
+        "historysettings.go",
+        "itemmenu.go",
+        "library.go",
+        "like.go",
+        "logssettings.go",
+        "main.go",
+        "navigation.go",
+        "nowplaying.go",
+        "playback.go",
+        "playbackstate.go",
+        "playerror.go",
+        "playlist.go",
+        "queue.go",
+        "reportpage.go",
+        "routes.go",
+        "rows.go",
+        "search.go",
+        "settingspage.go",
+        "shell.go",
+        "shortcuts.go",
+        "stats.go",
+        "subscription.go",
+        "task.go",
+        "toolscard.go",
+        "updatesettings.go",
+    ],
+    embedsrcs = ["fonts/GoogleSans.ttf"],
+    importpath = "github.com/elianiva/meiro",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/applog",
+        "//internal/artwork",
+        "//internal/audio",
+        "//internal/cookies",
+        "//internal/diskcache",
+        "//internal/history",
+        "//internal/keymap",
+        "//internal/lru",
+        "//internal/memprof",
+        "//internal/playstate",
+        "//internal/proc",
+        "//internal/report",
+        "//internal/settings",
+        "//internal/ytdlp",
+        "//m3",
+        "//player",
+        "//systemmedia",
+        "//youtube",
+        "@com_github_egoist_mygo//:mygo",
+        "@com_github_egoist_mygo//plugins/updater",
+        "@com_github_egoist_mygo//plugins/updater/native",
+        "@com_github_egoist_mygo//ui",
+        "@com_github_egoist_mygo//ui/chart",
+    ],
+)
+
+go_binary(
+    name = "meiro",
+    embed = [":meiro_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "meiro_test",
+    srcs = [
+        "bench_test.go",
+        "benchfixture_test.go",
+        "cpu_other_test.go",
+        "cpu_unix_test.go",
+        "crash_test.go",
+        "harness_test.go",
+        "idle_test.go",
+        "integration_test.go",
+        "library_test.go",
+        "like_test.go",
+        "playback_integration_test.go",
+        "playbackstate_test.go",
+        "queue_test.go",
+        "routes_test.go",
+        "shortcuts_test.go",
+        "soak_test.go",
+        "startup_test.go",
+        "states_test.go",
+        "subscription_test.go",
+    ],
+    embed = [":meiro_lib"],
+    deps = [
+        "//internal/applog",
+        "//internal/artwork",
+        "//internal/audio",
+        "//internal/cookies",
+        "//internal/history",
+        "//internal/keymap",
+        "//internal/playstate",
+        "//internal/proc",
+        "//internal/settings",
+        "//player",
+        "//youtube",
+        "@com_github_egoist_mygo//:mygo",
+        "@com_github_egoist_mygo//ui",
+    ],
+)

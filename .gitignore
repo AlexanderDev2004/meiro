@@ -1,4 +1,5 @@
 /build/
+*.test
 /.mygo/
 mygo_windows_*.syso
 /.amp/portals/*

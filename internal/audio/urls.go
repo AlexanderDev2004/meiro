@@ -86,7 +86,6 @@ func (c *URLs) run(ctx context.Context, videoID string, e *urlEntry) {
 	ctx, cancel := context.WithTimeout(ctx, ResolveTimeout)
 	defer cancel()
 	e.url, e.total, e.err = c.resolve(ctx, videoID, e.cookie)
-	close(e.done)
 	if e.err != nil {
 		c.mu.Lock()
 		if c.entries[videoID] == e {
@@ -94,6 +93,9 @@ func (c *URLs) run(ctx context.Context, videoID string, e *urlEntry) {
 		}
 		c.mu.Unlock()
 	}
+	// Remove failed results before waking waiters. Otherwise a caller that
+	// retries immediately can still find and reuse this failed entry.
+	close(e.done)
 }
 
 // stale reports whether a finished entry is past its lifetime.

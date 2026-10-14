@@ -142,6 +142,7 @@ func newApp() *app {
 		router:     ui.NewRouter(routeByID(routeHome).path("")),
 		player:     player.New(playerOptions()...),
 		settings:   settings.Defaults(),
+		openURL:    mygo.Shell.OpenExternal,
 		page:       &pageData{},
 		list:       &ui.ListState{},
 		pages:      lru.New[string, *pageData](pageCacheLimit),
@@ -155,7 +156,6 @@ func newApp() *app {
 	a.cacheSongsText = strconv.Itoa(a.settings.CacheSongs)
 	a.run = func(work func()) {
 		go func() {
-			a.openURL = mygo.Shell.OpenExternal
 			defer a.recoverBackground("background work")
 			work()
 		}()

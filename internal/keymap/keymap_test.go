@@ -65,6 +65,16 @@ func TestEveryDefaultIsBindableAndUnique(t *testing.T) {
 	}
 }
 
+func TestPlaybackDefaultsAvoidArrowKeys(t *testing.T) {
+	for _, action := range []Action{Previous, Next, VolumeUp, VolumeDown} {
+		for _, b := range New(nil).Bindings(action) {
+			if b.Key == ui.KeyLeft || b.Key == ui.KeyRight || b.Key == ui.KeyUp || b.Key == ui.KeyDown {
+				t.Errorf("%s uses an arrow key: %s", action, b)
+			}
+		}
+	}
+}
+
 func TestOverrides(t *testing.T) {
 	m := New(map[string]string{
 		"search":   "Cmd+P",
@@ -123,8 +133,8 @@ func TestHintPartsDropTheModifierAlreadyDown(t *testing.T) {
 		{Binding{Cmd: true, Mods: ui.Shift, Key: ui.KeyM}, "windows", []Part{glyph(GlyphShift), text("M")}},
 		{Binding{Cmd: true, Mods: ui.Alt | ui.Super, Key: ui.KeyLeft}, "windows", []Part{text("Alt"), text("Win"), glyph(GlyphLeft)}},
 		{Binding{Cmd: true, Mods: ui.Alt, Key: ui.KeyUp}, "darwin", []Part{text("⌥"), glyph(GlyphUp)}},
-		{Binding{Key: ui.KeySpace}, "linux", []Part{glyph(GlyphSpace)}},
-		{Binding{Key: ui.KeyEscape}, "linux", []Part{text("Esc")}},
+		{Binding{Key: ui.KeySpace}, "linux", nil},
+		{Binding{Key: ui.KeyEscape}, "linux", nil},
 	} {
 		if got := tt.b.HintParts(tt.goos); !slices.Equal(got, tt.want) {
 			t.Errorf("%v on %s: %v, want %v", tt.b, tt.goos, got, tt.want)

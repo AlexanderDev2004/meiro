@@ -142,13 +142,18 @@ func (a *app) cancelSuggestions() {
 // it shows the search page; typing asks YouTube Music for what it offers,
 // which the panel under the bar shows.
 func (a *app) searchBar(c *ui.Context) ui.Element {
+	trailingPadding := float32(0)
+	if a.keyboard.hints {
+		trailingPadding = 40
+	}
 	result := m3.SearchBar(c, m3.SearchSpec{
-		Value:       &a.search.query,
-		Placeholder: searchPlaceholder,
-		Key:         "search",
-		AutoFocus:   a.focusSearch,
-		Height:      48,
-		MaxWidth:    520,
+		Value:           &a.search.query,
+		Placeholder:     searchPlaceholder,
+		Key:             "search",
+		AutoFocus:       a.focusSearch,
+		Height:          48,
+		MaxWidth:        520,
+		TrailingPadding: trailingPadding,
 	})
 	a.focusSearch = false
 	a.search.barWidth = result.Element.Bounds().W

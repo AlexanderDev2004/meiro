@@ -37,12 +37,12 @@ func TestVolumeShortcuts(t *testing.T) {
 	tt := ui.NewTester(a.view, 1000, 700)
 	a.setVolume(50)
 	tt.Frame()
-	tt.Key(ui.Cmd, ui.KeyUp)
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyI)
 	if a.volume != 55 {
 		t.Errorf("volume up: %v", a.volume)
 	}
-	tt.Key(ui.Cmd, ui.KeyDown)
-	tt.Key(ui.Cmd, ui.KeyDown)
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyO)
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyO)
 	if a.volume != 45 {
 		t.Errorf("volume down: %v", a.volume)
 	}
@@ -146,6 +146,9 @@ func TestHoldingTheModifierShowsTheKeysOverTheControls(t *testing.T) {
 		}
 		tt.HoldModifiers(mods)
 		tt.Frame()
+		if hasTextExactly(tt, "Space") {
+			t.Error("the overlay advertises Space even though it does not use the held modifier")
+		}
 		// The rail and the player each name the key, as changed, not the
 		// modifier that is already down.
 		for _, hint := range []string{"P", "1", "2", "3", "J", "R"} {

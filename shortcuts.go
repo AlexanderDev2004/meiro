@@ -254,6 +254,10 @@ func (a *app) hinted(c *ui.Context, build func(), actions ...keymap.Action) ui.E
 	return ui.Row(c).Key("hint-" + string(actions[0])).Shrink(0).Children(func() {
 		build()
 		if a.keyboard.hints {
+			parts := a.hintParts(actions...)
+			if len(parts) == 0 {
+				return
+			}
 			at := ui.Box(c).Absolute().PassThrough()
 			if actions[0] == keymap.Search {
 				// A wide field takes its key inside its end, where it reads
@@ -269,7 +273,7 @@ func (a *app) hinted(c *ui.Context, build func(), actions ...keymap.Action) ui.E
 				}
 				at.Left(0).Right(0).Bottom(drop).Center()
 			}
-			at.Children(func() { m3.KeyBadge(c, a.hintParts(actions...)...) })
+			at.Children(func() { m3.KeyBadge(c, parts...) })
 		}
 	})
 }

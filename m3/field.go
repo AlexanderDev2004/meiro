@@ -15,6 +15,9 @@ type SearchSpec struct {
 	Height float32
 	// MaxWidth keeps a wide bar from stretching across the window.
 	MaxWidth float32
+	// TrailingPadding reserves room at the end of the input for an overlaid
+	// control, without shifting the control itself.
+	TrailingPadding float32
 	// Dismiss leads the bar with a back arrow that closes it, for a bar that
 	// opens over the page it narrows rather than standing on a page of its
 	// own.
@@ -67,7 +70,7 @@ func SearchBar(c *ui.Context, spec SearchSpec) SearchResult {
 			ui.Icon(c, IconSearch).FontSize(24).TextColor(sc.OnSurfaceVariant)
 		}
 		input := ui.TextInputBase(c.Key("input"), spec.Value).Placeholder(spec.Placeholder).Label(spec.Placeholder).
-			Grow(1).MinWidth(0).FontSize(16).TextColor(sc.OnSurface)
+			Grow(1).MinWidth(0).FontSize(16).TextColor(sc.OnSurface).Padding(0, spec.TrailingPadding, 0, 0)
 		if spec.AutoFocus {
 			input.AutoFocus()
 		}

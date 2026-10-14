@@ -75,10 +75,10 @@ func cmd(key ui.Key) Binding { return Binding{Cmd: true, Key: key} }
 // shows them.
 var Actions = []Info{
 	{PlayPause, "Play or pause", "Playback", []Binding{{Key: ui.KeySpace}}},
-	{Previous, "Previous track", "Playback", []Binding{cmd(ui.KeyLeft)}},
-	{Next, "Next track", "Playback", []Binding{cmd(ui.KeyRight)}},
-	{VolumeUp, "Volume up", "Playback", []Binding{cmd(ui.KeyUp)}},
-	{VolumeDown, "Volume down", "Playback", []Binding{cmd(ui.KeyDown)}},
+	{Previous, "Previous track", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyJ}}},
+	{Next, "Next track", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyL}}},
+	{VolumeUp, "Volume up", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyI}}},
+	{VolumeDown, "Volume down", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyO}}},
 	{Mute, "Mute", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyM}}},
 	{Shuffle, "Shuffle", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyS}}},
 	{Repeat, "Repeat", "Playback", []Binding{{Cmd: true, Mods: ui.Shift, Key: ui.KeyR}}},
@@ -264,9 +264,12 @@ var keyGlyphs = map[ui.Key]Glyph{
 
 // HintParts is what to press once the shortcut modifier is down, for a badge
 // on a button: the other modifiers, then the key, with arrows, Shift, Space
-// and Enter as glyphs. Cmd is left out, as it is already down; a key bound
-// without it is written in full.
+// and Enter as glyphs. Cmd is left out, as it is already down. A binding
+// without Cmd cannot be triggered by the held modifier, so has no hint.
 func (b Binding) HintParts(goos string) []Part {
+	if !b.Cmd {
+		return nil
+	}
 	mac := goos == "darwin"
 	var parts []Part
 	if b.Mods&ui.Ctrl != 0 {

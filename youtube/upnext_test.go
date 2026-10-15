@@ -34,6 +34,36 @@ func TestGetUpNextSeedsALoneTrackWithItsOwnMix(t *testing.T) {
 	}
 }
 
+func TestLoudnessUsesTheSignedInWebPlayer(t *testing.T) {
+	auth, err := NewCookieAuth("SAPISID=test", CookieOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	client := NewClient(Options{CookieAuth: auth, HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			return nil, err
+		}
+		body := `{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"audioTrack":{"loudnessDb":2.290}}]}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}})
+	got, err := client.Loudness(context.Background(), "vid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LoudnessDB != 2.290 {
+		t.Errorf("loudness = %#v, want 2.290", got)
+	}
+	contextPayload, ok := payload["context"].(map[string]any)
+	if !ok {
+		t.Fatalf("request context = %#v", payload["context"])
+	}
+	clientPayload, ok := contextPayload["client"].(map[string]any)
+	if !ok || clientPayload["clientName"] != "WEB" || payload["videoId"] != "vid" {
+		t.Errorf("web player request = %#v", payload)
+	}
+}
+
 func TestReportPlaybackPingsTheTrackingURL(t *testing.T) {
 	auth, err := NewCookieAuth("SAPISID=test", CookieOptions{})
 	if err != nil {

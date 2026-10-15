@@ -165,6 +165,14 @@ func (a *app) playbackCacheCard(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	a.settingsCard(c, "Playback cache", m3.IconMusicNote, func() {
 		ui.Column(c).Gap(12).Children(func() {
+			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+				settingLabel(c, "Normalize loudness", "Adjust track gain to keep songs at a more consistent volume. Requires a signed-in YouTube session.").Grow(1)
+				on := a.settings.NormalizeLoudness
+				if m3.Switch(c, &on, "Normalize loudness").Changed() {
+					a.settings.NormalizeLoudness = on
+					a.saveSettings()
+				}
+			})
 			settingLabel(c, "Keep recent songs", "Enter any non-negative whole number and press Enter to apply. Set 0 to turn the cache off. Older songs are removed first; each is kept in the format YouTube serves it, in a private Meiro cache folder.")
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 				input := ui.TextInputBase(c.Key("audio-cache-limit"), &a.cacheSongsText).

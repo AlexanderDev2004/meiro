@@ -10,6 +10,7 @@ and this project adheres to
 
 ### Added
 
+- **Loudness normalization** keeps tracks at a more consistent volume when enabled in Settings and the account is signed in.
 - **Playlist sorting**: order playlist songs by title, artist, or duration in
   either direction. The selected order also controls Play, Shuffle, track
   activation, and playlist search results.

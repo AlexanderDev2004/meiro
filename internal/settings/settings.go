@@ -39,6 +39,8 @@ type Settings struct {
 	Volume float64 `json:"volume"`
 	// AutoPlay adds YouTube Music's generated queue after the selected tracks.
 	AutoPlay bool `json:"autoPlay"`
+	// NormalizeLoudness applies YouTube's per-track loudness correction when signed in.
+	NormalizeLoudness bool `json:"normalizeLoudness"`
 	// CacheSongs is how many recently played audio files to keep on disk.
 	CacheSongs int `json:"cacheSongs"`
 	// CacheDirectory is the parent folder for the app-managed audio cache.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -329,6 +330,44 @@ func TestAPlayedTrackEndsTheRunOfSkips(t *testing.T) {
 	a.advance()
 	if a.current.VideoID != "f" || a.playErr != "" {
 		t.Errorf("current %q, playErr %q: want f playing after c", a.current.VideoID, a.playErr)
+	}
+}
+
+func TestLoudnessGainAdjustsPlaybackVolumeWithoutChangingTheUserVolume(t *testing.T) {
+	tests := []struct {
+		name      string
+		volume    float64
+		loudness  float64
+		normalize bool
+		want      float64
+	}{
+		{"disabled", 50, -11.7, false, 0.5},
+		{"quieter track", 50, -6, true, 0.9976311575},
+		{"loud track", 50, 6, true, 0.2505936168},
+		{"gain is capped", 90, -11.7, true, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := playbackVolume(tt.volume, tt.loudness, tt.normalize); math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("playbackVolume(%v, %v, %t) = %v, want %v", tt.volume, tt.loudness, tt.normalize, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoudnessFailureDoesNotBlockPlayback(t *testing.T) {
+	a, r := playbackApp(t)
+	a.settings.NormalizeLoudness = true
+	auth, err := youtube.NewCookieAuth("SAPISID=test", youtube.CookieOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.account.session = &session{client: youtube.NewClient(youtube.Options{CookieAuth: auth, HTTPClient: &http.Client{Transport: playbackRoundTrip(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("metadata unavailable")
+	})}})}
+	a.play(tracks("song")[0], tracks("song"))
+	if !r.asked("song") || a.playErr != "" {
+		t.Fatalf("loudness lookup blocked playback: asked=%v error=%q", r.asked("song"), a.playErr)
 	}
 }
 

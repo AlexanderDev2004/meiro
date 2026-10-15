@@ -3,11 +3,64 @@ package youtube
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 )
+
+// Loudness is the per-track loudness metadata returned by YouTube's web player.
+// LoudnessDB is measured in decibels relative to the reference level.
+type Loudness struct {
+	LoudnessDB float64
+}
+
+func parseLoudness(raw json.RawMessage) (Loudness, bool) {
+	var response struct {
+		PlayabilityStatus struct {
+			Status string `json:"status"`
+		} `json:"playabilityStatus"`
+		StreamingData struct {
+			Formats []struct {
+				AudioTrack struct {
+					PerceptualLoudnessDb float64 `json:"perceptualLoudnessDb"`
+					LoudnessDb           float64 `json:"loudnessDb"`
+				} `json:"audioTrack"`
+			} `json:"formats"`
+		} `json:"streamingData"`
+	}
+	if json.Unmarshal(raw, &response) != nil || response.PlayabilityStatus.Status == "UNPLAYABLE" {
+		return Loudness{}, false
+	}
+	for _, format := range response.StreamingData.Formats {
+		if format.AudioTrack.LoudnessDb != 0 {
+			return Loudness{LoudnessDB: format.AudioTrack.LoudnessDb}, true
+		}
+		if format.AudioTrack.PerceptualLoudnessDb != 0 {
+			return Loudness{LoudnessDB: format.AudioTrack.PerceptualLoudnessDb}, true
+		}
+	}
+	return Loudness{}, false
+}
+
+// Loudness asks the web player for the loudness metadata of videoID. YouTube
+// only returns this metadata for sessions it accepts, so an unavailable value
+// is reported as the zero Loudness without an error.
+func (c *Client) Loudness(ctx context.Context, videoID string) (Loudness, error) {
+	if c.cookieAuth == nil || strings.TrimSpace(videoID) == "" {
+		return Loudness{}, nil
+	}
+	raw, err := c.executeForClient(ctx, "player", map[string]any{
+		"videoId":         videoID,
+		"playbackContext": map[string]any{"contentPlaybackContext": map[string]any{}},
+	}, webClient)
+	if err != nil {
+		return Loudness{}, err
+	}
+	value, _ := parseLoudness(raw)
+	return value, nil
+}
 
 // ReportPlayback tells YouTube Music that the account started playing a track,
 // as its own player does. That is what puts the track in the listening

@@ -21,35 +21,35 @@ func parseLoudness(raw json.RawMessage) (Loudness, bool) {
 		PlayabilityStatus struct {
 			Status string `json:"status"`
 		} `json:"playabilityStatus"`
-		StreamingData struct {
-			Formats []struct {
-				AudioTrack struct {
-					PerceptualLoudnessDb float64 `json:"perceptualLoudnessDb"`
-					LoudnessDb           float64 `json:"loudnessDb"`
-				} `json:"audioTrack"`
-			} `json:"formats"`
-		} `json:"streamingData"`
+		PlayerConfig struct {
+			AudioConfig struct {
+				PerceptualLoudnessDb float64 `json:"perceptualLoudnessDb"`
+				LoudnessDb           float64 `json:"loudnessDb"`
+			} `json:"audioConfig"`
+		} `json:"playerConfig"`
 	}
 	if json.Unmarshal(raw, &response) != nil || response.PlayabilityStatus.Status == "UNPLAYABLE" {
 		return Loudness{}, false
 	}
-	for _, format := range response.StreamingData.Formats {
-		if format.AudioTrack.LoudnessDb != 0 {
-			return Loudness{LoudnessDB: format.AudioTrack.LoudnessDb}, true
-		}
-		if format.AudioTrack.PerceptualLoudnessDb != 0 {
-			return Loudness{LoudnessDB: format.AudioTrack.PerceptualLoudnessDb}, true
-		}
+	audio := response.PlayerConfig.AudioConfig
+	if audio.LoudnessDb != 0 {
+		return Loudness{LoudnessDB: audio.LoudnessDb}, true
+	}
+	if audio.PerceptualLoudnessDb != 0 {
+		return Loudness{LoudnessDB: audio.PerceptualLoudnessDb}, true
 	}
 	return Loudness{}, false
 }
 
 // Loudness asks the web player for the loudness metadata of videoID. YouTube
 // only returns this metadata for sessions it accepts, so an unavailable value
-// is reported as the zero Loudness without an error.
+// is reported as an error and can be retried later.
 func (c *Client) Loudness(ctx context.Context, videoID string) (Loudness, error) {
-	if c.cookieAuth == nil || strings.TrimSpace(videoID) == "" {
-		return Loudness{}, nil
+	if c.cookieAuth == nil {
+		return Loudness{}, errors.New("youtube: loudness requires a signed-in session")
+	}
+	if strings.TrimSpace(videoID) == "" {
+		return Loudness{}, errors.New("youtube: loudness requires a video ID")
 	}
 	raw, err := c.executeForClient(ctx, "player", map[string]any{
 		"videoId":         videoID,
@@ -58,7 +58,10 @@ func (c *Client) Loudness(ctx context.Context, videoID string) (Loudness, error)
 	if err != nil {
 		return Loudness{}, err
 	}
-	value, _ := parseLoudness(raw)
+	value, ok := parseLoudness(raw)
+	if !ok {
+		return Loudness{}, errors.New("youtube: player response has no loudness metadata")
+	}
 	return value, nil
 }
 

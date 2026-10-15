@@ -355,6 +355,29 @@ func TestLoudnessGainAdjustsPlaybackVolumeWithoutChangingTheUserVolume(t *testin
 	}
 }
 
+func TestLoudnessStateDoesNotCarryBetweenTracks(t *testing.T) {
+	a, _ := playbackApp(t)
+	a.loudness, a.loudnessOK = 6, true
+	a.enterTrack(tracks("next")[0], true)
+	if a.loudness != 0 || a.loudnessOK {
+		t.Fatalf("new track inherited loudness %v (known=%t)", a.loudness, a.loudnessOK)
+	}
+}
+
+func TestLoudnessCacheIsBounded(t *testing.T) {
+	a, _ := playbackApp(t)
+	for i := range 300 {
+		id := strconv.Itoa(i)
+		a.loudnessMap.Put(id, youtube.Loudness{LoudnessDB: float64(i)})
+	}
+	if got := a.loudnessMap.Len(); got != 256 {
+		t.Fatalf("loudness cache holds %d entries, want 256", got)
+	}
+	if _, ok := a.loudnessMap.Get("0"); ok {
+		t.Fatal("least-recently-used loudness entry was not evicted")
+	}
+}
+
 func TestLoudnessFailureDoesNotBlockPlayback(t *testing.T) {
 	a, r := playbackApp(t)
 	a.settings.NormalizeLoudness = true
@@ -368,6 +391,30 @@ func TestLoudnessFailureDoesNotBlockPlayback(t *testing.T) {
 	a.play(tracks("song")[0], tracks("song"))
 	if !r.asked("song") || a.playErr != "" {
 		t.Fatalf("loudness lookup blocked playback: asked=%v error=%q", r.asked("song"), a.playErr)
+	}
+}
+
+func TestPlaybackSettingsContainNormalizationOutsideCacheCard(t *testing.T) {
+	a := newTestApp()
+	a.router.Push("/settings")
+	tt := ui.NewTester(a.view, 1000, 4000)
+	tt.Frame()
+	if !tt.HasText("Normalize loudness") || !tt.HasText("Playback") || !tt.HasText("Keep recent songs") {
+		t.Fatal("playback normalization and cache controls are not present on settings page")
+	}
+}
+
+func TestNormalizationToggleImmediatelyUpdatesPlayerVolume(t *testing.T) {
+	a, _ := playbackApp(t)
+	a.volume = 50
+	a.loudness, a.loudnessOK = 6, true
+	a.setNormalizeLoudness(true)
+	if got, want := a.player.Volume(), playbackVolume(50, 6, true); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("enabling normalization set volume to %v, want %v", got, want)
+	}
+	a.setNormalizeLoudness(false)
+	if got, want := a.player.Volume(), 0.5; got != want {
+		t.Fatalf("disabling normalization set volume to %v, want %v", got, want)
 	}
 }
 

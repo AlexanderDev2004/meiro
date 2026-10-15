@@ -44,7 +44,7 @@ func TestLoudnessUsesTheSignedInWebPlayer(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			return nil, err
 		}
-		body := `{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"audioTrack":{"loudnessDb":2.290}}]}}`
+		body := `{"playabilityStatus":{"status":"OK"},"playerConfig":{"audioConfig":{"loudnessDb":2.290}}}`
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}})
 	got, err := client.Loudness(context.Background(), "vid")

@@ -61,44 +61,29 @@ browser session to show your personalized Home feed and Library.
 
 ## Screenshots
 
-These screenshots show real pages from a signed-in YouTube Music session.
-Explore is shown in a compact window, with Trending below the visible area.
-
-<p align="center">
-  <img src="docs/screenshots/home.png" alt="Home page with personalized recommendations" width="900">
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/explore.png" alt="Compact Explore page showing new albums and top songs, with Trending below the window" width="900">
-</p>
+These show real pages from a signed-in YouTube Music session. Click one to see it
+full size.
 
 <table>
   <tr>
-    <th>Library</th>
-    <th>Search</th>
+    <td align="center"><a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home page with personalized recommendations" width="300"></a><br><sub>Home</sub></td>
+    <td align="center"><a href="docs/screenshots/explore.png"><img src="docs/screenshots/explore.png" alt="Explore page with new albums and top songs" width="300"></a><br><sub>Explore</sub></td>
+    <td align="center"><a href="docs/screenshots/library.png"><img src="docs/screenshots/library.png" alt="Library with saved playlists and artists" width="300"></a><br><sub>Library</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/library.png" alt="Signed-in library with saved music" width="480"></td>
-    <td><img src="docs/screenshots/search.png" alt="Search results for Yorushika with category filters" width="480"></td>
+    <td align="center"><a href="docs/screenshots/search.png"><img src="docs/screenshots/search.png" alt="Search results with category filters" width="300"></a><br><sub>Search</sub></td>
+    <td align="center"><a href="docs/screenshots/artist.png"><img src="docs/screenshots/artist.png" alt="Artist page with top songs" width="300"></a><br><sub>Artist</sub></td>
+    <td align="center"><a href="docs/screenshots/playlist.png"><img src="docs/screenshots/playlist.png" alt="Playlist page with its track list" width="300"></a><br><sub>Playlist</sub></td>
   </tr>
   <tr>
-    <td>Saved playlists and artists from the signed-in account.</td>
-    <td>Search results with filters for songs, albums, artists, playlists, and videos.</td>
-  </tr>
-</table>
-
-<table>
-  <tr>
-    <th>Artist</th>
-    <th>Playlist</th>
+    <td align="center"><a href="docs/screenshots/player.png"><img src="docs/screenshots/player.png" alt="Full player with the queue" width="300"></a><br><sub>Player and queue</sub></td>
+    <td align="center"><a href="docs/screenshots/related.png"><img src="docs/screenshots/related.png" alt="Full player with related tracks" width="300"></a><br><sub>Related tracks</sub></td>
+    <td align="center"><a href="docs/screenshots/stats.png"><img src="docs/screenshots/stats.png" alt="Listening stats with plays per day" width="300"></a><br><sub>Listening stats</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/artist.png" alt="Yorushika artist page with top songs" width="480"></td>
-    <td><img src="docs/screenshots/playlist.png" alt="Playlist detail page with its track list" width="480"></td>
-  </tr>
-  <tr>
-    <td>An artist page with its top songs.</td>
-    <td>A playlist page with playback controls and tracks.</td>
+    <td align="center"><a href="docs/screenshots/settings-appearance.png"><img src="docs/screenshots/settings-appearance.png" alt="Appearance settings with theme and palette" width="300"></a><br><sub>Appearance</sub></td>
+    <td align="center"><a href="docs/screenshots/settings-sound.png"><img src="docs/screenshots/settings-sound.png" alt="Equaliser settings" width="300"></a><br><sub>Equaliser</sub></td>
+    <td align="center"><a href="docs/screenshots/settings-keyboard.png"><img src="docs/screenshots/settings-keyboard.png" alt="Keyboard shortcut settings" width="300"></a><br><sub>Shortcuts</sub></td>
   </tr>
 </table>
 

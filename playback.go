@@ -51,8 +51,12 @@ type playback struct {
 
 	// stream finds the current track's audio; it is busy from the moment a
 	// track is chosen until its audio is found.
-	stream  task
-	streams *audio.URLs
+	stream task
+	// loudnessLoad and preloadLoudnessLoad ask for the loudness of the current
+	// and the next track; a result lands in loudnessMap whenever it arrives.
+	loudnessLoad        task
+	preloadLoudnessLoad task
+	streams             *audio.URLs
 	// seeking moves the player to seekTarget; it is busy while the decode is
 	// being restarted there.
 	seeking task
@@ -291,56 +295,46 @@ type resolvedAudio struct {
 	total     time.Duration
 	fromCache bool
 	// playErr is why the player could not open the audio, once found.
-	playErr    error
-	loudness   youtube.Loudness
-	loudnessOK bool
+	playErr error
 }
 
-type loudnessSource struct {
-	client *youtube.Client
-	cached youtube.Loudness
-	ok     bool
+// loudnessTimeout bounds one request for a track's loudness.
+const loudnessTimeout = 15 * time.Second
+
+// applyLoudness sets the current track's gain from what is known of it, and
+// the player's volume to match.
+func (a *app) applyLoudness() {
+	value, ok := a.loudnessMap.Get(a.current.VideoID)
+	a.loudness, a.loudnessOK = value.LoudnessDB, ok
+	a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && a.settings.NormalizeLoudness))
 }
 
-func (a *app) loudnessSource(videoID string) loudnessSource {
-	cached, ok := a.loudnessMap.Get(videoID)
-	return loudnessSource{client: a.clientIfSignedIn(), cached: cached, ok: ok}
-}
-
-func (a *app) rememberLoudness(videoID string, found resolvedAudio) {
-	if found.loudnessOK {
-		a.loudnessMap.Put(videoID, found.loudness)
+// fetchLoudness asks for a track's loudness without holding up playback, and
+// applies it if the track is still the current one when it arrives. load is
+// the task that owns the request, so that a newer one replaces it.
+func (a *app) fetchLoudness(item youtube.MusicItem, load *task) {
+	var client *youtube.Client
+	if a.account.session != nil {
+		client = a.account.session.client
 	}
-}
-
-func (a *app) clientIfSignedIn() *youtube.Client {
-	if a.account.session == nil {
-		return nil
-	}
-	return a.account.session.client
-}
-
-func (a *app) fetchLoudness(item youtube.MusicItem, source loudnessSource) {
-	if source.ok || source.client == nil || !a.settings.NormalizeLoudness {
+	if client == nil || !a.settings.NormalizeLoudness {
 		return
 	}
-	a.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), upNextTimeout)
-		defer cancel()
-		value, err := source.client.Loudness(ctx, item.VideoID)
+	if _, ok := a.loudnessMap.Get(item.VideoID); ok {
+		return
+	}
+	startTask(a, load, loudnessTimeout, func(ctx context.Context) (youtube.Loudness, error) {
+		return client.Loudness(ctx, item.VideoID)
+	}, func(value youtube.Loudness, err error) {
 		if err != nil {
 			log.Printf("playback: loudness unavailable video_id=%s: %v", item.VideoID, err)
 			return
 		}
-		a.update(func() {
-			a.loudnessMap.Put(item.VideoID, value)
-			if a.current.VideoID != item.VideoID || !a.settings.NormalizeLoudness {
-				return
-			}
-			a.loudness, a.loudnessOK = value.LoudnessDB, true
-			a.player.SetVolume(playbackVolume(a.volume, a.loudness, true))
+		a.loudnessMap.Put(item.VideoID, value)
+		if a.current.VideoID == item.VideoID {
+			a.applyLoudness()
 			a.syncSystemMedia()
-		})
+		}
 	})
 }
 
@@ -358,9 +352,8 @@ func playbackVolume(volume, loudness float64, normalize bool) float64 {
 // with yt-dlp, and plays it.
 func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed bool) {
 	cookie, cache := a.account.cookie(), a.currentAudioCache()
-	loudness := a.loudnessSource(item.VideoID)
 	log.Printf("playback: resolving video_id=%s signed_in=%t", item.VideoID, cookie != "")
-	a.fetchLoudness(item, loudness)
+	a.fetchLoudness(item, &a.loudnessLoad)
 	startTask(a, &a.stream, audio.ResolveTimeout, func(ctx context.Context) (resolvedAudio, error) {
 		a.player.Stop()
 		found, err := findAudio(ctx, a.streams, item, cookie, cache)
@@ -377,9 +370,7 @@ func (a *app) streamAudio(item youtube.MusicItem, startAt time.Duration, changed
 			a.skipUnplayable(item)
 			return
 		}
-		a.rememberLoudness(item.VideoID, found)
-		a.loudness, a.loudnessOK = found.loudness.LoudnessDB, found.loudnessOK
-		a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && a.settings.NormalizeLoudness))
+		a.applyLoudness()
 		if found.total > 0 {
 			a.total = found.total
 		}
@@ -445,9 +436,8 @@ func (a *app) syncPreload() {
 		return
 	}
 	cookie, cache := a.account.cookie(), a.currentAudioCache()
-	loudness := a.loudnessSource(next.VideoID)
 	a.preloadFor = next.VideoID
-	a.fetchLoudness(next, loudness)
+	a.fetchLoudness(next, &a.preloadLoudnessLoad)
 	startTask(a, &a.preload, audio.ResolveTimeout, func(ctx context.Context) (preloadedAudio, error) {
 		found, err := findAudio(ctx, a.streams, next, cookie, cache)
 		if err == nil {
@@ -464,7 +454,6 @@ func (a *app) syncPreload() {
 			return
 		}
 		log.Printf("playback: preloaded video_id=%s from_cache=%t", next.VideoID, found.fromCache)
-		a.rememberLoudness(next.VideoID, found.resolvedAudio)
 		a.preloaded = found
 	})
 }
@@ -484,9 +473,7 @@ func (a *app) followed(tag string) {
 		item = a.queue.moveTo(i)
 	}
 	_, changed := a.enterTrack(item, true)
-	a.rememberLoudness(item.VideoID, found.resolvedAudio)
-	a.loudness, a.loudnessOK = found.loudness.LoudnessDB, found.loudnessOK
-	a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && a.settings.NormalizeLoudness))
+	a.applyLoudness()
 	if found.total > 0 {
 		a.total = found.total
 	}
@@ -542,9 +529,8 @@ func (a *app) recoverStream(failure string) bool {
 	}
 	paused, bySleep := a.player.Paused(), a.suspendedWhilePlaying
 	cookie, cache := a.account.cookie(), a.currentAudioCache()
-	loudness := a.loudnessSource(item.VideoID)
 	log.Printf("playback: stream broke off video_id=%s at=%s attempt=%d/%d: %s", item.VideoID, at.Round(time.Second), attempt, maxRecoveries, failure)
-	a.fetchLoudness(item, loudness)
+	a.fetchLoudness(item, &a.loudnessLoad)
 	startTask(a, &a.stream, audio.ResolveTimeout+time.Duration(attempt)*recoveryBackoff, func(ctx context.Context) (resolvedAudio, error) {
 		if err := a.sleep(ctx, time.Duration(attempt)*recoveryBackoff); err != nil {
 			return resolvedAudio{}, err
@@ -568,9 +554,7 @@ func (a *app) recoverStream(failure string) bool {
 			}
 			return
 		}
-		a.rememberLoudness(item.VideoID, found)
-		a.loudness, a.loudnessOK = found.loudness.LoudnessDB, found.loudnessOK
-		a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && a.settings.NormalizeLoudness))
+		a.applyLoudness()
 		if paused && bySleep && !a.suspendedWhilePlaying {
 			a.player.Resume() // the wake came while the stream was on its way
 		}
@@ -1040,20 +1024,21 @@ func (a *app) setShuffle(on bool) {
 	a.syncSystemMedia()
 }
 
-// setVolume sets the volume, from 0 to 100, and keeps it for the next run.
+// setNormalizeLoudness turns loudness normalization on or off, and keeps it
+// for the next run.
 func (a *app) setNormalizeLoudness(enabled bool) {
 	if a.settings.NormalizeLoudness == enabled {
 		return
 	}
 	a.settings.NormalizeLoudness = enabled
 	a.saveSettings()
-	a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && enabled))
-	if enabled && !a.loudnessOK && a.current.VideoID != "" {
-		item := a.current
-		a.fetchLoudness(item, a.loudnessSource(item.VideoID))
+	a.applyLoudness()
+	if enabled && a.current.VideoID != "" {
+		a.fetchLoudness(a.current, &a.loudnessLoad)
 	}
 }
 
+// setVolume sets the volume, from 0 to 100, and keeps it for the next run.
 func (a *app) setVolume(v float64) {
 	a.volume = min(max(v, 0), 100)
 	a.player.SetVolume(playbackVolume(a.volume, a.loudness, a.loudnessOK && a.settings.NormalizeLoudness))

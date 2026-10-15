@@ -394,6 +394,29 @@ func TestLoudnessFailureDoesNotBlockPlayback(t *testing.T) {
 	}
 }
 
+func TestLoudnessSurvivesTheStreamResolving(t *testing.T) {
+	a, _ := playbackApp(t)
+	a.settings.NormalizeLoudness = true
+	auth, err := youtube.NewCookieAuth("SAPISID=test", youtube.CookieOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.account.session = &session{client: youtube.NewClient(youtube.Options{CookieAuth: auth, HTTPClient: &http.Client{Transport: playbackRoundTrip(func(*http.Request) (*http.Response, error) {
+		body := `{"playerConfig":{"audioConfig":{"loudnessDb":6}}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}})}
+	want := playbackVolume(a.volume, 6, true)
+	a.play(tracks("song")[0], tracks("song"))
+	if !a.loudnessOK || math.Abs(a.player.Volume()-want) > 1e-9 {
+		t.Fatalf("first play: loudness known=%t, volume %v, want %v", a.loudnessOK, a.player.Volume(), want)
+	}
+	// The second play finds the value in the cache and asks for nothing.
+	a.play(tracks("song")[0], tracks("song"))
+	if !a.loudnessOK || math.Abs(a.player.Volume()-want) > 1e-9 {
+		t.Fatalf("replay: loudness known=%t, volume %v, want %v", a.loudnessOK, a.player.Volume(), want)
+	}
+}
+
 func TestPlaybackSettingsContainNormalizationOutsideCacheCard(t *testing.T) {
 	a := newTestApp()
 	a.router.Push("/settings")
@@ -407,7 +430,9 @@ func TestPlaybackSettingsContainNormalizationOutsideCacheCard(t *testing.T) {
 func TestNormalizationToggleImmediatelyUpdatesPlayerVolume(t *testing.T) {
 	a, _ := playbackApp(t)
 	a.volume = 50
-	a.loudness, a.loudnessOK = 6, true
+	a.current = tracks("song")[0]
+	a.loudnessMap.Put("song", youtube.Loudness{LoudnessDB: 6})
+	a.applyLoudness()
 	a.setNormalizeLoudness(true)
 	if got, want := a.player.Volume(), playbackVolume(50, 6, true); math.Abs(got-want) > 1e-9 {
 		t.Fatalf("enabling normalization set volume to %v, want %v", got, want)

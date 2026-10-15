@@ -88,3 +88,14 @@ func TestReportPlaybackPingsTheTrackingURL(t *testing.T) {
 		t.Errorf("signed out must do nothing: %v", err)
 	}
 }
+
+func TestUpNextTellsSongsFromVideos(t *testing.T) {
+	root := decodeResponse(json.RawMessage(`{"contents":{"playlistPanelRenderer":{"contents":[
+		{"playlistPanelVideoRenderer":{"videoId":"song","title":{"runs":[{"text":"Song"}]},"navigationEndpoint":{"watchEndpoint":{"watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"MUSIC_VIDEO_TYPE_ATV"}}}}}},
+		{"playlistPanelVideoRenderer":{"videoId":"clip","title":{"runs":[{"text":"Clip"}]},"navigationEndpoint":{"watchEndpoint":{"watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"MUSIC_VIDEO_TYPE_OMV"}}}}}}
+	]}}}`))
+	items := upNextResult(root).Items
+	if len(items) != 2 || items[0].IsVideo() || !items[1].IsVideo() {
+		t.Errorf("song and video not told apart: %+v", items)
+	}
+}

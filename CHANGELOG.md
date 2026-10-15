@@ -8,6 +8,11 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Songs in the queue no longer show as videos.** The recommended tracks after
+  a song now show as songs. Only real music videos carry the video badge.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

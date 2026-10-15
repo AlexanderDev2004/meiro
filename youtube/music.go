@@ -997,7 +997,16 @@ func parseMusicRenderer(key string, value any) (MusicItem, *jsonObject, bool) {
 	if !ok {
 		return MusicItem{}, nil, false
 	}
-	return parseMusicItem(kind, renderer), renderer, true
+	item := parseMusicItem(kind, renderer)
+	if key == "playlistPanelVideoRenderer" {
+		// Every entry of a queue is a panel video, songs included: the
+		// entry says in its watch endpoint which one it is. One that does
+		// not say is taken for a song, as a queue is mostly songs.
+		if videoType := nestedString(renderer.get("navigationEndpoint"), "musicVideoType"); videoType == "" || videoType == "MUSIC_VIDEO_TYPE_ATV" {
+			item.Kind = KindTrack
+		}
+	}
+	return item, renderer, true
 }
 
 // isSectionRenderer reports whether a key names a shelf or grid the page shows

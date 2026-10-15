@@ -123,7 +123,7 @@ func (a *app) onNavigate() {
 	// A playlist page opens unfiltered, with its search closed: the search
 	// belongs to the visit, not the page. A page kept from before rebuilds
 	// its rows, since the search is part of the rows' key.
-	a.detailFilter, a.detailSearchOpen, a.detailFocus, a.detailSearchHadFocus, a.detailSort, a.detailSortOpen = "", false, false, false, playlistSort{}, false
+	a.detailFilter, a.detailSearchOpen, a.detailSearchHadFocus, a.detailSort, a.detailSortOpen = "", false, false, playlistSort{}, false
 	a.pageLoad.stop()
 	a.pageMore.stop()
 	a.nowPlaying.open, a.nowPlaying.closing = false, false
@@ -137,7 +137,9 @@ func (a *app) onNavigate() {
 	// bar only when it has no results to show.
 	a.cancelSuggestions()
 	if r.id == routeSearch {
-		a.focusSearch = a.search.submitted == ""
+		if a.search.submitted == "" {
+			a.searchField.Focus()
+		}
 	}
 	if page, ok := a.pages.Get(location); ok && (r.id == routeSearch || r.load == nil || page.fresh(time.Now())) {
 		// A page kept comes back where it was scrolled to. One with nothing

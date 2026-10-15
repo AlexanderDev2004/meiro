@@ -26,7 +26,7 @@ const (
 func (a *app) miniPlayer(c *ui.Context) {
 	m3.Provide(c, a.resolveTheme(c))
 	sc := m3.Of(c).Scheme
-	col := ui.Column(c).Key("mini").Fill().Padding(16).Gap(12).Background(sc.SurfaceContainer)
+	col := ui.Column(c.Key("mini")).Fill().Padding(16).Gap(12).Background(sc.SurfaceContainer)
 	if runtime.GOOS != "darwin" {
 		// macOS rounds the popover itself.
 		col.Radius(m3.ExtraLarge)

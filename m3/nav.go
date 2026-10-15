@@ -61,7 +61,7 @@ type RailEvent struct {
 func Rail(c *ui.Context, spec RailSpec) RailEvent {
 	var event RailEvent
 	sc := Of(c).Scheme
-	rail := ui.Column(c).Key("m3-rail")
+	rail := ui.Column(c.Key("m3-rail"))
 	// One progress drives the width and the layout, so they stay in step:
 	// the labels swap between under and beside their icons at the midpoint,
 	// while they are faded out. The icons and pills never swap.

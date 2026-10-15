@@ -1167,8 +1167,8 @@ func parseMusicCardShelf(renderer *jsonObject) (MusicItem, bool) {
 
 // cardTarget reads what a card opens from the title it shows and from the card
 // itself: navigationID names the page, and the video is what the card plays. A
-// card that names neither is one of a song, whose artist — named in the
-// subtitle — is the page its menu can open.
+// card that names neither is one of a song, whose artist, named in the
+// subtitle, is the page its menu can open.
 func cardTarget(renderer *jsonObject) (browseID, videoID string) {
 	for _, value := range []any{renderer.get("title"), renderer.get("onTap")} {
 		if browseID == "" {

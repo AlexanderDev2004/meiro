@@ -122,7 +122,7 @@ func TestEscapeCancelsRecording(t *testing.T) {
 	a.router.Push("/settings")
 	tt := ui.NewTester(a.view, 1000, 5000)
 	tt.Frame()
-	a.keyboard.recording = keymap.Mute
+	a.startRecording(keymap.Mute)
 	tt.Frame()
 	tt.Key(0, ui.KeyEscape)
 	tt.Frame()

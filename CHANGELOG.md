@@ -10,6 +10,17 @@ and this project adheres to
 
 ### Added
 
+- **Sign in with a browser window.** Account setup opens a separate
+  Chromium-based browser (your default browser when it is one, such as Chrome,
+  Edge, Brave, Helium, Chromium, or Vivaldi) with a temporary profile. Sign in
+  there; Meiro reads the session, closes the window, and deletes the profile.
+  Because that window is never used again, YouTube does not rotate its
+  session. Importing from a browser and pasting a Cookie header are now under
+  an Advanced toggle.
+- **Ten-band equaliser.** Shape the sound in Settings → Sound: ten sliders
+  over the usual frequency bands, plus the presets an audio player offers.
+  A change restarts the music where it is, and a boosted band reserves
+  matching headroom so the shaped signal cannot clip.
 - **Loudness normalization** keeps tracks at a more consistent volume when enabled in Settings and the account is signed in.
 - **Playlist sorting**: order playlist songs by title, artist, or duration in
   either direction. The selected order also controls Play, Shuffle, track
@@ -18,6 +29,21 @@ and this project adheres to
   what is playing and scrobbles each track once you have listened to half of
   it, or four minutes. Pause scrobbling without disconnecting, and plays that
   could not be sent are kept and retried, also after a restart.
+
+### Changed
+
+- A song played on its own now starts its mix directly, which saves one
+  request.
+- Settings scrolls faster, because only the cards in view are built and
+  painted, and the hue slider paints fewer gradients. A page restored from
+  the page cache returns to its previous scroll position.
+
+### Fixed
+
+- Signed-in playback is now reported to YouTube Music, so plays reach the
+  listening history that recommendations use.
+- On macOS, apps started from the Dock or Finder now find `ffmpeg` and
+  `yt-dlp` in common tool folders such as Homebrew's.
 
 ## [0.1.0] - 2026-10-14
 

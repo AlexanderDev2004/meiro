@@ -106,3 +106,67 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 log "Go toolchain ready: $(go version)"
 log "Bazel toolchain ready: bazelisk ${BAZELISK_VERSION} for Bazel $(cat .bazelversion)"
+
+# Running the real app on the orb Desktop and driving it (see
+# .agents/skills/verify-meiro). The orb already has ffmpeg, Node.js and Bun.
+# The app needs yt-dlp, a screenshot tool (grim), a keyboard injector (wtype)
+# and a pointer injector (wlrctl, which no Debian 12 package ships).
+YTDLP_VERSION="2026.08.19"
+WLRCTL_COMMIT="c6bc60820bb8786c7509e651bcae9393a738f180"
+
+apt_install() {
+	if [[ "$(id -u)" -eq 0 ]]; then
+		apt-get update && apt-get install -y "$@"
+	elif command -v sudo >/dev/null 2>&1; then
+		sudo -n apt-get update && sudo -n apt-get install -y "$@"
+	else
+		printf 'Missing packages (%s) and neither root nor sudo is available.\n' "$*" >&2
+		exit 1
+	fi
+}
+
+missing=()
+for pkg in grim wtype; do
+	dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+	log "Installing ${missing[*]}"
+	apt_install "${missing[@]}"
+fi
+
+case "$(uname -m)" in
+	x86_64) YTDLP_ASSET="yt-dlp_linux" YTDLP_SHA256="58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a" ;;
+	aarch64 | arm64) YTDLP_ASSET="yt-dlp_linux_aarch64" YTDLP_SHA256="b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc" ;;
+esac
+if [[ "$("$HOME/.local/bin/yt-dlp" --version 2>/dev/null || true)" != "$YTDLP_VERSION" ]]; then
+	log "Installing yt-dlp ${YTDLP_VERSION}"
+	tmp_ytdlp="$(mktemp)"
+	curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}" -o "$tmp_ytdlp"
+	echo "$YTDLP_SHA256  $tmp_ytdlp" | sha256sum --check --status || {
+		rm -f "$tmp_ytdlp"
+		printf 'yt-dlp checksum verification failed.\n' >&2
+		exit 1
+	}
+	install -m 0755 "$tmp_ytdlp" "$HOME/.local/bin/yt-dlp"
+	rm -f "$tmp_ytdlp"
+fi
+
+if [[ ! -x "$HOME/.local/bin/wlrctl" ]] || [[ ! -f "$HOME/.local/share/wlrctl-$WLRCTL_COMMIT" ]]; then
+	log "Building wlrctl ${WLRCTL_COMMIT:0:7}"
+	build_missing=()
+	for pkg in meson ninja-build libwayland-dev libxkbcommon-dev wayland-protocols pkg-config gcc; do
+		dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || build_missing+=("$pkg")
+	done
+	if [[ ${#build_missing[@]} -gt 0 ]]; then
+		apt_install "${build_missing[@]}"
+	fi
+	wlrctl_src="$(mktemp -d)"
+	git clone -q https://git.sr.ht/~brocellous/wlrctl "$wlrctl_src"
+	git -C "$wlrctl_src" checkout -q "$WLRCTL_COMMIT"
+	meson setup "$wlrctl_src/build" "$wlrctl_src" >/dev/null
+	ninja -C "$wlrctl_src/build" >/dev/null
+	install -m 0755 "$wlrctl_src/build/wlrctl" "$HOME/.local/bin/wlrctl"
+	touch "$HOME/.local/share/wlrctl-$WLRCTL_COMMIT"
+	rm -rf "$wlrctl_src"
+fi
+log "Desktop tools ready: grim, wtype, wlrctl, yt-dlp ${YTDLP_VERSION}"

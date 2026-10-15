@@ -81,6 +81,11 @@ type Settings struct {
 	// (see package keymap), written as "Shift+Cmd+K". An action not listed
 	// keeps its default.
 	Shortcuts map[string]string `json:"shortcuts,omitempty"`
+	// EQOn enables the equaliser's bands.
+	EQOn bool `json:"eqOn"`
+	// EQBands holds each band's gain in dB, low to high, one per the player's
+	// equaliser frequencies.
+	EQBands []float64 `json:"eqBands,omitempty"`
 }
 
 // Defaults is what a first run starts with.

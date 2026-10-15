@@ -391,7 +391,7 @@ func (a *app) openDeepLink(link deepLink) {
 		a.playVideoID(link.value)
 	case linkSearch:
 		a.search.query = link.value
-		a.focusSearch = true
+		a.searchField.Focus()
 		a.router.Push(routeByID(routeSearch).path(""))
 	}
 }

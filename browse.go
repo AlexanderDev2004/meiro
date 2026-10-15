@@ -238,7 +238,7 @@ func (a *app) columnShelf(c *ui.Context, r row) {
 			for g := first; g < last; g++ {
 				start := g * 4
 				group := r.items[start:min(start+4, len(r.items))]
-				ui.Column(c).Key(start).Width(columnWidth).Shrink(0).Children(func() {
+				ui.Column(c.Key(start)).Width(columnWidth).Shrink(0).Children(func() {
 					for i, item := range group {
 						a.songRow(c, item, r.queue, songOptions{list: r.shelf, position: start + i})
 					}
@@ -485,8 +485,8 @@ func (a *app) songRow(c *ui.Context, item youtube.MusicItem, queue []youtube.Mus
 	if playing {
 		container = sc.SecondaryContainer
 	}
-	var main, menuButton, menuAnchor, removeButton ui.Element
-	hasMenu, hasAnchor, hasRemove := false, false, false
+	var main, menuButton, menuAnchor ui.Element
+	hasMenu, hasAnchor := false, false
 	row.Children(func() {
 		main = ui.ButtonBase(c.Key(key + "-activate"))
 		hovered := row.Hovered()
@@ -559,16 +559,11 @@ func (a *app) songRow(c *ui.Context, item youtube.MusicItem, queue []youtube.Mus
 		// A row of the queue has its own remove button; the track playing
 		// stays.
 		if o.list == "queue" && o.position != a.queue.index {
-			removeButton = m3.IconButton(c, m3.IconButtonSpec{
+			m3.IconButton(c, m3.IconButtonSpec{
 				Icon: m3.IconClose, Label: "Remove " + item.Title + " from the queue", Key: key + "-remove",
-			})
-			hasRemove = true
+			}).OnClick(func() { a.removeFromQueue(o.position) })
 		}
 	})
-	if hasRemove && removeButton.Clicked() {
-		a.removeFromQueue(o.position)
-		return
-	}
 	if hasMenu {
 		pointer := main.RightClicked() || menuButton.RightClicked()
 		x, y, _ := main.PointerPosition()
@@ -662,18 +657,22 @@ func (a *app) queueMenuItems(c *ui.Context, index int, close func()) {
 	if index == q.index || index >= q.len() {
 		return
 	}
-	if index > 0 && m3.MenuItem(c, "Move up", m3.IconExpandLess).Clicked() {
-		a.shiftInQueue(index, -1)
-		close()
+	if index > 0 {
+		m3.MenuItem(c, "Move up", m3.IconExpandLess).OnClick(func() {
+			a.shiftInQueue(index, -1)
+			close()
+		})
 	}
-	if index < q.len()-1 && m3.MenuItem(c, "Move down", m3.IconExpandMore).Clicked() {
-		a.shiftInQueue(index, 1)
-		close()
+	if index < q.len()-1 {
+		m3.MenuItem(c, "Move down", m3.IconExpandMore).OnClick(func() {
+			a.shiftInQueue(index, 1)
+			close()
+		})
 	}
-	if m3.MenuItem(c, "Remove from queue", m3.IconClose).Clicked() {
+	m3.MenuItem(c, "Remove from queue", m3.IconClose).OnClick(func() {
 		a.removeFromQueue(index)
 		close()
-	}
+	})
 }
 
 // topResult is the card a search's results lead with: the artwork of what the
@@ -887,7 +886,8 @@ func (a *app) playlistSearch(c *ui.Context) {
 			button.Background(m3.StateFill(sc.SurfaceContainerHigh, sc.OnSurface,
 				button.Hovered(), button.Pressed(), button.FocusVisible()))
 			if button.Clicked() {
-				a.detailSearchOpen, a.detailFocus = true, true
+				a.detailSearchOpen = true
+				a.detailSearchField.Focus()
 				a.detailSearchHadFocus = false
 			}
 		})
@@ -899,11 +899,11 @@ func (a *app) playlistSearch(c *ui.Context) {
 	}
 	control.Width(detailSearchButton + (maxWidth-detailSearchButton)*min(max(grown, 0), 1))
 	control.Children(func() {
-		result := m3.SearchBar(c, m3.SearchSpec{
+		result, _ := m3.SearchBar(c, m3.SearchSpec{
 			Value:       &a.detailFilter,
 			Placeholder: "Search in this playlist",
 			Key:         "playlist-search-bar",
-			AutoFocus:   a.detailFocus,
+			Focus:       &a.detailSearchField,
 			MaxWidth:    maxWidth,
 			Dismiss:     true,
 		})
@@ -916,15 +916,12 @@ func (a *app) playlistSearch(c *ui.Context) {
 			a.detailSearchHadFocus = result.Focused
 		}
 	})
-	// The bar has taken the keyboard, or the frame it would have was not the
-	// one it opened on.
-	a.detailFocus = false
 }
 
 // closePlaylistSearch puts a playlist page back to its whole list, and the
 // control back to the button that opens the search.
 func (a *app) closePlaylistSearch() {
-	a.detailSearchOpen, a.detailFocus, a.detailSearchHadFocus = false, false, false
+	a.detailSearchOpen, a.detailSearchHadFocus = false, false
 	a.detailFilter = ""
 }
 

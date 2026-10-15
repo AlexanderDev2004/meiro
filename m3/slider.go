@@ -48,6 +48,9 @@ type SliderSpec struct {
 	Wavy, Waving bool
 	// Hue paints the track as the spectrum, for choosing a hue.
 	Hue bool
+	// Vertical stands the slider up: lo at the bottom, hi at the top. Draw
+	// expects a tall, narrow box, as an equaliser's band slider has.
+	Vertical bool
 	// Disabled greys the slider out.
 	Disabled bool
 }
@@ -71,6 +74,9 @@ func Slider(c *ui.Context, value *float64, lo, hi float64, spec SliderSpec) ui.E
 		Cursor(ui.CursorPointer).Grow(1).MinWidth(40)
 	if spec.Label != "" {
 		s.Label(spec.Label)
+	}
+	if spec.Vertical {
+		s.Vertical().Padding(pad)
 	}
 	if spec.Disabled {
 		s.Disabled(true)
@@ -105,6 +111,35 @@ func Slider(c *ui.Context, value *float64, lo, hi float64, spec SliderSpec) ui.E
 			gap = 4
 		}
 		radius := thick / 2
+
+		if spec.Vertical {
+			cx := r.X + r.W/2
+			y0, y1 := r.Y+pad, r.Y+r.H-pad
+			hy := y1 - (y1-y0)*frac
+			p.Fill(ui.Rect{X: cx - thick/2, Y: y0, W: thick, H: y1 - y0}, inactive, radius)
+			// The active track fills from the middle of the range to the
+			// thumb: above the middle for a boost, below for a cut.
+			mid := y1
+			if lo < 0 && hi > 0 {
+				mid = y1 - (y1-y0)*float32(-lo/(hi-lo))
+				// The 0 dB mark, a short line beside the track at the
+				// level the thumb rests on.
+				p.Fill(ui.Rect{X: cx - thick/2 - 9, Y: mid - 1, W: 6, H: 2}, handle, 1)
+			}
+			if span := max(mid, hy) - min(mid, hy); span > 1 {
+				p.Fill(ui.Rect{X: cx - thick/2, Y: min(mid, hy), W: thick, H: span}, active, radius)
+			}
+			// The thumb, a circle on the track, a shade wider while held.
+			d := max(thick+10, 18)
+			if pressed {
+				d += 2
+			}
+			p.Fill(ui.Rect{X: cx - d/2, Y: hy - d/2, W: d, H: d}, handle, d/2)
+			if focused {
+				p.Stroke(ui.Rect{X: cx - d/2 - 3, Y: hy - d/2 - 3, W: d + 6, H: d + 6}, sc.Secondary, 6, 2)
+			}
+			return
+		}
 
 		if spec.Hue {
 			track := ui.Rect{X: x0, Y: cy - thick/2, W: x1 - x0, H: thick}

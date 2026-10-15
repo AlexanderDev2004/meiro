@@ -16,7 +16,7 @@ type Loudness struct {
 	LoudnessDB float64
 }
 
-func parseLoudness(raw json.RawMessage) (Loudness, bool) {
+func parseLoudness(raw json.RawMessage) (Loudness, error) {
 	var response struct {
 		PlayabilityStatus struct {
 			Status string `json:"status"`
@@ -28,17 +28,20 @@ func parseLoudness(raw json.RawMessage) (Loudness, bool) {
 			} `json:"audioConfig"`
 		} `json:"playerConfig"`
 	}
-	if json.Unmarshal(raw, &response) != nil || response.PlayabilityStatus.Status == "UNPLAYABLE" {
-		return Loudness{}, false
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return Loudness{}, err
+	}
+	if response.PlayabilityStatus.Status == "UNPLAYABLE" {
+		return Loudness{}, errors.New("youtube: player response is unplayable")
 	}
 	audio := response.PlayerConfig.AudioConfig
 	if audio.LoudnessDb != 0 {
-		return Loudness{LoudnessDB: audio.LoudnessDb}, true
+		return Loudness{LoudnessDB: audio.LoudnessDb}, nil
 	}
 	if audio.PerceptualLoudnessDb != 0 {
-		return Loudness{LoudnessDB: audio.PerceptualLoudnessDb}, true
+		return Loudness{LoudnessDB: audio.PerceptualLoudnessDb}, nil
 	}
-	return Loudness{}, false
+	return Loudness{}, errors.New("youtube: player response has no loudness metadata")
 }
 
 // Loudness asks the web player for the loudness metadata of videoID. YouTube
@@ -58,11 +61,7 @@ func (c *Client) Loudness(ctx context.Context, videoID string) (Loudness, error)
 	if err != nil {
 		return Loudness{}, err
 	}
-	value, ok := parseLoudness(raw)
-	if !ok {
-		return Loudness{}, errors.New("youtube: player response has no loudness metadata")
-	}
-	return value, nil
+	return parseLoudness(raw)
 }
 
 // ReportPlayback tells YouTube Music that the account started playing a track,

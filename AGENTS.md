@@ -139,6 +139,13 @@ compare `a.router.Path()` against string literals. *(review)*
 - Logic with rules of its own (the queue, the LRU, the caches, settings)
   also gets direct unit tests in its package.
 
+## Proving a change
+
+`.agents/skills/verify-meiro/` drives the real app headlessly and records
+screenshots, request counters and before/after runs. Use it for any change a
+user can see, and to answer "prove it works". Its `features/` map lists what to
+cover for each part of the app. When you add a feature, add or update its entry.
+
 ## Performance
 
 `bench_test.go` measures whole frames of large pages (500-track album,

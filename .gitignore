@@ -11,3 +11,4 @@ mygo_windows_*.syso
 /meiro
 /lastfmkeys_gen.go
 /bazel-*
+/zz_proof*_test.go

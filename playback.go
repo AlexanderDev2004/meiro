@@ -1026,8 +1026,8 @@ func (a *app) playCollection(item youtube.MusicItem, key string, shuffle bool) {
 	})
 }
 
-// startRadio plays a seed from what the item names — the track itself, or one
-// drawn from the album, the playlist or the artist — and lets YouTube Music
+// startRadio plays a seed from what the item names, either the track itself or one
+// drawn from the album, the playlist or the artist, and lets YouTube Music
 // generate the queue behind it, as the radio and mix entries of its menus do.
 func (a *app) startRadio(item youtube.MusicItem, key string) {
 	if target := item.Target(); target.Kind == youtube.TargetTrack {

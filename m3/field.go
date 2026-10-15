@@ -9,8 +9,10 @@ type SearchSpec struct {
 	Value       *string
 	Placeholder string
 	// Key keeps the field's focus and caret across frames.
-	Key       any
-	AutoFocus bool
+	Key any
+	// Focus binds the field to a handle, so that Focus on it moves the
+	// keyboard to the field, waiting while the bar is hidden.
+	Focus *ui.Handle
 	// Height is 56 by default, the Material search bar; 48 suits a toolbar.
 	Height float32
 	// MaxWidth keeps a wide bar from stretching across the window.
@@ -34,14 +36,12 @@ type SearchResult struct {
 	Cleared   bool
 	// Dismissed is the back arrow pressed: the search is over.
 	Dismissed bool
-	// Element is the bar, for anchoring what opens under it, as the
-	// suggestions do.
-	Element ui.Element
 }
 
 // SearchBar builds a pill-shaped search field. It never searches by itself:
-// typing only edits the text, and Submitted reports Enter.
-func SearchBar(c *ui.Context, spec SearchSpec) SearchResult {
+// typing only edits the text, and Submitted reports Enter. The element is the
+// bar, for anchoring what opens under it, as the suggestions do.
+func SearchBar(c *ui.Context, spec SearchSpec) (SearchResult, ui.Element) {
 	sc := Of(c).Scheme
 	height := spec.Height
 	if height == 0 {
@@ -73,8 +73,8 @@ func SearchBar(c *ui.Context, spec SearchSpec) SearchResult {
 		}
 		input := ui.TextInputBase(c.Key("input"), spec.Value).Placeholder(spec.Placeholder).Label(spec.Placeholder).
 			Grow(1).MinWidth(0).FontSize(16).TextColor(sc.OnSurface).Padding(0, spec.TrailingPadding, 0, 0)
-		if spec.AutoFocus {
-			input.AutoFocus()
+		if spec.Focus != nil {
+			input.Bind(spec.Focus)
 		}
 		if input.Submitted() {
 			result.Submitted = true
@@ -90,6 +90,5 @@ func SearchBar(c *ui.Context, spec SearchSpec) SearchResult {
 		}
 	})
 	result.Focused = bar.FocusWithin()
-	result.Element = bar
-	return result
+	return result, bar
 }

@@ -48,9 +48,6 @@ type searchState struct {
 	suggestions youtube.SearchSuggestions
 	suggest     task
 	suggestOpen bool
-	// barWidth is the width the search bar had in the last frame, which the
-	// panel of suggestions takes its width from.
-	barWidth float32
 }
 
 // runSearch searches for query with the filter given. It is the only way a
@@ -146,17 +143,15 @@ func (a *app) searchBar(c *ui.Context) ui.Element {
 	if a.keyboard.hints {
 		trailingPadding = 40
 	}
-	result := m3.SearchBar(c, m3.SearchSpec{
+	result, bar := m3.SearchBar(c, m3.SearchSpec{
 		Value:           &a.search.query,
 		Placeholder:     searchPlaceholder,
 		Key:             "search",
-		AutoFocus:       a.focusSearch,
+		Focus:           &a.searchField,
 		Height:          48,
 		MaxWidth:        520,
 		TrailingPadding: trailingPadding,
 	})
-	a.focusSearch = false
-	a.search.barWidth = result.Element.Bounds().W
 	switch {
 	case result.Submitted:
 		a.runSearchFrom(a.search.query)
@@ -166,7 +161,7 @@ func (a *app) searchBar(c *ui.Context) ui.Element {
 	case result.Changed:
 		a.suggestSearches(a.search.query)
 	}
-	return result.Element
+	return bar
 }
 
 // searchSuggestions shows under the bar what YouTube Music offers for the text
@@ -188,7 +183,7 @@ func (a *app) searchSuggestions(c *ui.Context, bar ui.Element) {
 	if len(queries) == 0 && len(items) == 0 {
 		return
 	}
-	width := s.barWidth
+	width := bar.Bounds().W
 	if width < 320 {
 		width = 320
 	}

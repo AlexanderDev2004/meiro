@@ -120,7 +120,7 @@ func (a *app) sheet(c *ui.Context) {
 	ui.Box(c).Absolute().Top(0).Right(0).Size(sheetCorner, sheetCorner).Background(tint)
 	ui.Box(c).Absolute().Bottom(0).Left(0).Size(sheetCorner, sheetCorner).Background(tint)
 	ui.Box(c).Absolute().Bottom(0).Right(0).Size(sheetCorner, sheetCorner).Background(tint)
-	sheet := ui.Column(c).Key("sheet").Absolute().Top(sheetInset).Left(0).Right(sheetInset).Bottom(sheetInset).
+	sheet := ui.Column(c.Key("sheet")).Absolute().Top(sheetInset).Left(0).Right(sheetInset).Bottom(sheetInset).
 		Radius(m3.ExtraLarge)
 	if !a.nowPlaying.open {
 		sheet.Background(sc.Surface)

@@ -69,29 +69,29 @@ type app struct {
 
 	// page is the page shown. It moves between here and pages, the cache of
 	// recent ones, so exactly one place holds each.
-	page        *pageData
-	location    string
-	routed      routed
-	pageLoad    task // the load of the page shown
-	pageMore    task // the next part of the page shown
-	pages       *lru.Cache[string, *pageData]
-	details     *lru.Cache[string, detail]
-	carousels   *lru.Cache[string, *m3.CarouselState]
-	list        *ui.ListState
-	listWidth   float32 // width the page's list had in the last frame
-	search      searchState
-	focusSearch bool
+	page      *pageData
+	location  string
+	routed    routed
+	pageLoad  task // the load of the page shown
+	pageMore  task // the next part of the page shown
+	pages     *lru.Cache[string, *pageData]
+	details   *lru.Cache[string, detail]
+	carousels *lru.Cache[string, *m3.CarouselState]
+	list      *ui.ListState
+	listWidth float32 // width the page's list had in the last frame
+	search    searchState
+	// searchField and detailSearchField move the keyboard to the top bar's
+	// search and to the playlist page's, where Focus waits while one is hidden.
+	searchField, detailSearchField ui.Handle
 	// writing holds the writes to a like, the library or a subscription that
 	// are out, by what they change, so that one is not asked for twice.
 	writing  map[string]bool
 	menuOpen bool // the account menu
 	// detailFilter narrows a playlist page to the songs that match. It is
 	// part of the page's rows key, so a change asks for the rows again.
-	// detailSearchOpen is whether the bar that types it is open, and
-	// detailFocus the frame it opened on, when it takes the keyboard.
+	// detailSearchOpen is whether the bar that types it is open.
 	detailFilter         string
 	detailSearchOpen     bool
-	detailFocus          bool
 	detailSearchHadFocus bool
 	detailSort           playlistSort
 	detailSortOpen       bool

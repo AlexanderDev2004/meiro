@@ -16,6 +16,9 @@ type keyboardState struct {
 	keys *keymap.Map
 	// recording is the action waiting for its new key in the settings, or "".
 	recording keymap.Action
+	// field is the button of the action being recorded, which takes the
+	// keyboard when recording starts.
+	field ui.Handle
 	// problem says why the key just pressed was not taken.
 	problem string
 	// hints is set while the keys show over the controls they press.
@@ -117,7 +120,7 @@ func (a *app) perform(action keymap.Action) {
 	case keymap.Repeat:
 		a.cycleRepeat()
 	case keymap.Search:
-		a.focusSearch = true
+		a.searchField.Focus()
 		a.navigate(routeSearch)
 	case keymap.Home:
 		a.navigate(routeHome)
@@ -130,6 +133,12 @@ func (a *app) perform(action keymap.Action) {
 	case keymap.ClosePlayer:
 		a.nowPlaying.closing = true
 	}
+}
+
+// startRecording waits for the new key of action, which its button takes.
+func (a *app) startRecording(action keymap.Action) {
+	a.keyboard.recording, a.keyboard.problem = action, ""
+	a.keyboard.field.Focus()
 }
 
 // captureKey takes the key pressed while action is recording, as its new
@@ -176,7 +185,7 @@ func (a *app) keyboardCard(c *ui.Context) {
 			m3.Text(c, m3.BodyMedium, a.keyboard.problem).TextColor(sc.Error)
 		}
 		for _, info := range keymap.Actions {
-			ui.Row(c).Key(info.Action).Gap(16).AlignItems(ui.Center).Children(func() {
+			ui.Row(c.Key(info.Action)).Gap(16).AlignItems(ui.Center).Children(func() {
 				m3.Text(c, m3.BodyLarge, info.Title).TextColor(sc.OnSurface).Grow(1)
 				recording := a.keyboard.recording == info.Action
 				label := keys.Labels(info.Action, keymap.OS())
@@ -186,10 +195,10 @@ func (a *app) keyboardCard(c *ui.Context) {
 				}
 				b := m3.Button(c, m3.ButtonSpec{Label: label, Kind: kind, Size: m3.Small40, Key: "key-" + string(info.Action)})
 				if recording {
-					b.Focus().HandleInput(func(ev ui.InputEvent) bool { return a.captureKey(info.Action, ev) })
+					b.Bind(&a.keyboard.field).HandleInput(func(ev ui.InputEvent) bool { return a.captureKey(info.Action, ev) })
 				}
 				if b.Clicked() {
-					a.keyboard.recording, a.keyboard.problem = info.Action, ""
+					a.startRecording(info.Action)
 				}
 				if _, changed := a.settings.Shortcuts[string(info.Action)]; changed {
 					if m3.IconButton(c, m3.IconButtonSpec{Icon: m3.IconRefresh, Label: "Reset " + info.Title, Size: m3.ExtraSmall32, Key: "reset-" + string(info.Action)}).Clicked() {
@@ -251,7 +260,7 @@ func (a *app) hintParts(actions ...keymap.Action) []m3.KeyPart {
 // control keeps its state when the keys come and go; it is returned for the
 // layout of the control to be set on it.
 func (a *app) hinted(c *ui.Context, build func(), actions ...keymap.Action) ui.Element {
-	return ui.Row(c).Key("hint-" + string(actions[0])).Shrink(0).Children(func() {
+	return ui.Row(c.Key("hint-" + string(actions[0]))).Shrink(0).Children(func() {
 		build()
 		if a.keyboard.hints {
 			parts := a.hintParts(actions...)

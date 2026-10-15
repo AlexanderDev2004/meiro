@@ -286,7 +286,7 @@ func (a *app) playerBar(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	w, _ := c.Size()
 	wide := w > 1180
-	bar := ui.Row(c).Key("player").Absolute().Left(playerGutter).Right(playerGutter).Bottom(playerGutter).
+	bar := ui.Row(c.Key("player")).Absolute().Left(playerGutter).Right(playerGutter).Bottom(playerGutter).
 		Height(playerHeight).Padding(10, 20, 10, 12).Gap(16).AlignItems(ui.Center).
 		Radius(m3.ExtraLarge).Background(sc.SurfaceContainerHigh)
 	m3.Elevation(c, bar, 3)
@@ -341,7 +341,7 @@ func (a *app) nowPlayingView(c *ui.Context) {
 	sc := m3.Of(c).Scheme
 	w, h := c.Size()
 	wide := w > 1040
-	panel := ui.Column(c).Key("now-playing").Absolute().Left(0).Right(0).
+	panel := ui.Column(c.Key("now-playing")).Absolute().Left(0).Right(0).
 		Background(sc.Surface).Radius(m3.ExtraLarge).Clip()
 	// The player is pinned to the sheet's edges, so it rises and sinks by
 	// moving its Top and its Bottom, through m3.Rise.
@@ -440,7 +440,7 @@ func (a *app) nowPlayingArtwork(c *ui.Context, imageSize int, artSize, radius fl
 // sidePanel holds the queue, lyrics and related songs under tabs, on a tonal card.
 func (a *app) sidePanel(c *ui.Context, wide bool) {
 	sc := m3.Of(c).Scheme
-	card := ui.Column(c).Key("np-side").Radius(m3.ExtraLarge).Background(sc.SurfaceContainerLow.Alpha(0.9)).Clip().
+	card := ui.Column(c.Key("np-side")).Radius(m3.ExtraLarge).Background(sc.SurfaceContainerLow.Alpha(0.9)).Clip().
 		Padding(8, 0, 0).Gap(4)
 	if wide {
 		card.Width(480).Shrink(0)
@@ -518,9 +518,7 @@ func (a *app) queueView(c *ui.Context) {
 	}
 	ui.Row(c).Padding(0, 16, 4).AlignItems(ui.Center).Children(func() {
 		m3.Text(c, m3.BodySmall, strconv.Itoa(q.remaining())+" up next").Grow(1).TextColor(sc.OnSurfaceVariant)
-		if m3.Button(c, m3.ButtonSpec{Label: "Clear queue", Kind: m3.TextOnly, Size: m3.ExtraSmall32, Disabled: q.remaining() < 1, Key: "queue-clear"}).Clicked() {
-			a.clearUpcoming()
-		}
+		m3.Button(c, m3.ButtonSpec{Label: "Clear queue", Kind: m3.TextOnly, Size: m3.ExtraSmall32, Disabled: q.remaining() < 1, Key: "queue-clear"}).OnClick(a.clearUpcoming)
 	})
 	list := &a.nowPlaying.queueList
 	// A press in a row can replace the queue while the list still asks about

@@ -9,8 +9,8 @@ import (
 
 // animateInterval is how long animatePaint waits before a moving drawing is
 // painted again, about a 60 Hz frame. Asking for the very next display frame
-// instead repaints the whole scene at the screen's refresh rate — three times
-// that on a 180 Hz display — for motions this slow: the wave covers one
+// instead repaints the whole scene at the screen's refresh rate, which is three times
+// that on a 180 Hz display, for motions this slow: the wave covers one
 // wavelength in 1.8 s and the loading indicator morphs over 0.7 s. That pins
 // the GPU and leaves it none for everything else, the slide into the
 // full-screen player first, so the cadence is fixed. Just under a 60 Hz

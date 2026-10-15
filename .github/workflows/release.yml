@@ -352,6 +352,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The release notes come from CHANGELOG.md.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
       - uses: actions/download-artifact@v8
         with:
           pattern: meiro-*

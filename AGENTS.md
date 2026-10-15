@@ -22,6 +22,16 @@ The BUILD.bazel files follow go.mod and the packages on disk, so after adding,
 moving or deleting a Go file, run `bazel run //:gazelle` to update them. A
 dependency that go.mod does not name yet is a `go get` first.
 
+## Changelog
+
+`CHANGELOG.md` follows Keep a Changelog. A change that a user can see, such
+as a new feature, a changed behaviour, a fix, or a removal, adds an entry
+under `## [Unreleased]` in the same change, in the matching group (`Added`,
+`Changed`, `Fixed`, `Removed`). Write what the user gets, not how the code
+works, and follow the style of the existing entries. Pure refactors, tests,
+and CI changes need no entry. On a release, rename `Unreleased` to the
+version and date, and add a new empty `Unreleased` section. *(review)*
+
 ## Where code goes
 
 ```

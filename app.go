@@ -143,6 +143,13 @@ type app struct {
 	toolsLoaded bool
 	toolsLookup task
 
+	// eqApplied is the band table the player last received, so a slider
+	// release applies only what changed.
+	eqApplied [player.EQBandCount]float64
+	// eqDebounce waits out a quiet moment after the sliders moved before the
+	// changed bands restart the decode.
+	eqDebounce task
+
 	// stop ends the periodic work; stopOnce closes it once.
 	stop     chan struct{}
 	stopOnce sync.Once

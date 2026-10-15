@@ -10,6 +10,10 @@ and this project adheres to
 
 ### Added
 
+- **Ten-band equaliser.** Shape the sound in Settings → Sound: ten sliders
+  over the usual frequency bands, plus the presets an audio player offers.
+  A change restarts the music where it is, and a boosted band reserves
+  matching headroom so the shaped signal cannot clip.
 - **Playlist sorting**: order playlist songs by title, artist, or duration in
   either direction. The selected order also controls Play, Shuffle, track
   activation, and playlist search results.

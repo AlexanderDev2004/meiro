@@ -13,9 +13,9 @@ and this project adheres to
 - **Synced lyrics.** The Lyrics tab now shows timed lyrics, from YouTube Music
   when it has them and from LRCLIB otherwise. The line being sung is lit and
   glides to the middle as the song plays, lines fade the further they are from
-  it, and a click on a line jumps to it. The source of the lyrics shows beside
-  the choice.
-  Choose **Synced** or **Static** above the lyrics; Meiro remembers the choice.
+  it, and a click on a line jumps to it. Choose **Synced** or **Static** above
+  the lyrics, where the source of the lyrics also shows; Meiro remembers the
+  choice. A lookup that fails is tried again the next time the tab opens.
 - **Windows release (untested).** Each release now includes a Windows
   installer (`amd64`) in a full and a minimal build. Windows support is
   untested: the author has no Windows machine, and no one has run Meiro there.

@@ -22,6 +22,8 @@ and this project adheres to
 
 ### Fixed
 
+- **The menu button no longer slides.** When the side menu opens or closes,
+  the button stays above the icons instead of drifting while the menu grows.
 - **Small buttons are easier to hit.** Icon buttons, chips, switches and
   sliders now react to a press up to 48 pixels around them, as large as their
   look is small. Neighbouring buttons (the player's, the queue's and a shelf's

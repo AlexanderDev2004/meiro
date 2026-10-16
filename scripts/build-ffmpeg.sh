@@ -35,10 +35,10 @@ sha256() {
 }
 
 exe=""
-strip=strip
+strip="strip"
 if [[ "$platform" == windows-* ]]; then
 	exe=".exe"
-	strip=x86_64-w64-mingw32-strip
+	strip="x86_64-w64-mingw32-strip"
 fi
 
 out="resources/${platform}"

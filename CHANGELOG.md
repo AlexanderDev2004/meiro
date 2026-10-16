@@ -52,6 +52,9 @@ and this project adheres to
   navigation rail no longer keeps an empty band at its top.
 - **Songs in the queue no longer show as videos.** The recommended tracks after
   a song now show as songs. Only real music videos carry the video badge.
+- **The playlist sort menu closes when its control is pressed again.** The
+  button that opened the menu now closes it too, as the account menu's button
+  does.
 
 ## [0.2.0] - 2026-10-15
 

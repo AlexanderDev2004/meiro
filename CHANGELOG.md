@@ -16,6 +16,9 @@ and this project adheres to
 
 ### Fixed
 
+- **Window buttons on Windows sit on the grey frame.** The page
+  surface now starts below them instead of running under them, and the
+  navigation rail no longer keeps an empty band at its top.
 - **Songs in the queue no longer show as videos.** The recommended tracks after
   a song now show as songs. Only real music videos carry the video badge.
 

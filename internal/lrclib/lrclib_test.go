@@ -87,3 +87,57 @@ func TestParseLRCKeepsTheOriginalOfARomanisedCopy(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestGetRetriesAServerErrorAndSearchesAfterAFailure(t *testing.T) {
+	var gets, searches int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/get":
+			gets++
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "/api/search":
+			searches++
+			if searches == 1 {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			if r.URL.Query().Get("track_name") != "ラッキー☆オーブ" {
+				t.Errorf("search by %q", r.URL.Query().Get("track_name"))
+			}
+			_, _ = w.Write([]byte(`[{"plainLyrics":"p","syncedLyrics":"[00:01.00] a"}]`))
+		}
+	}))
+	defer srv.Close()
+	c := &Client{BaseURL: srv.URL, RetryDelay: time.Millisecond}
+	got, err := c.Get(context.Background(), Query{Title: "ラッキー☆オーブ - Lucky Orb (feat. Hatsune Miku)", Artist: "emon(Tes.)"})
+	if err != nil || got == nil || len(got.Synced) != 1 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if gets != 3 {
+		t.Fatalf("a 503 was asked %d times, want 3", gets)
+	}
+}
+
+func TestGetReportsAFailureWhenNothingWasFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	got, err := (&Client{BaseURL: srv.URL, RetryDelay: time.Millisecond}).Get(context.Background(), Query{Title: "T"})
+	if err == nil || got != nil {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestShortTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"ラッキー☆オーブ - Lucky Orb (feat. Hatsune Miku)": "ラッキー☆オーブ",
+		"Song (feat. Someone)": "Song",
+		"Song (Live)":          "Song (Live)",
+		"Plain":                "Plain",
+	} {
+		if got := ShortTitle(in); got != want {
+			t.Errorf("ShortTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -134,7 +134,13 @@ func (a *app) loadLyrics() {
 		return findLyrics(ctx, fetch, client, item, total)
 	}, func(found loadedLyrics, err error) {
 		l.text, l.footer, l.synced = found.text, found.footer, found.synced
-		if l.text == "" && len(l.synced) == 0 {
+		switch {
+		case l.text != "" || len(l.synced) > 0:
+		case err != nil:
+			// Not that there are none: the lookup failed. It is not
+			// remembered, so opening the tab or the next track tries again.
+			l.err, l.videoID = "Couldn't load lyrics. Try again in a moment.", ""
+		default:
 			l.err = "No lyrics for this song."
 		}
 	})
@@ -146,6 +152,7 @@ func (a *app) loadLyrics() {
 // error: the next is tried, and no lyrics at all is an empty result.
 func findLyrics(ctx context.Context, fetch lyricsSource, client *youtube.Client, item youtube.MusicItem, total time.Duration) (loadedLyrics, error) {
 	var found, plain loadedLyrics
+	var lookupErr error
 	if lyrics, err := client.GetLyrics(ctx, item.VideoID); err == nil {
 		plain = loadedLyrics{text: strings.TrimSpace(lyrics.Description), footer: lyrics.Footer}
 		for _, line := range lyrics.Timed {
@@ -157,9 +164,15 @@ func findLyrics(ctx context.Context, fetch lyricsSource, client *youtube.Client,
 	// Where the lyrics came from: what YouTube Music says of them, or itself.
 	found.footer = cmp.Or(plain.footer, "Source: YouTube Music")
 	if len(found.synced) == 0 && fetch != nil {
+		// A track that is not resolved yet has no length of its own; the one
+		// its row lists is as good, and LRCLIB takes a lookup without one.
+		if total <= 0 {
+			total = parseDuration(item.Duration)
+		}
 		got, err := fetch(ctx, lrclib.Query{Title: item.Title, Artist: item.Artist, Album: item.Album, Duration: total})
 		if err != nil {
 			log.Printf("lyrics: lrclib lookup failed: %v", err)
+			lookupErr = err
 		}
 		if got != nil && len(got.Synced) > 0 {
 			found.synced, found.footer = got.Synced, "Source: LRCLIB"
@@ -184,6 +197,9 @@ func findLyrics(ctx context.Context, fetch lyricsSource, client *youtube.Client,
 			lines[i] = line.Text
 		}
 		found.text = strings.TrimSpace(strings.Join(lines, "\n"))
+	}
+	if found.text == "" && len(found.synced) == 0 {
+		return found, lookupErr
 	}
 	return found, nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -93,5 +94,35 @@ func TestLyricsSwitchBetweenSyncedAndStatic(t *testing.T) {
 	tt.Frame()
 	if a.settings.StaticLyrics || !tt.HasText("second words") || tt.HasText("first words\nsecond words") {
 		t.Fatalf("synced mode lists lines: %v %q", a.settings.StaticLyrics, tt.Texts())
+	}
+}
+
+func TestFailedLyricsLookupIsTriedAgain(t *testing.T) {
+	a := newTestApp()
+	calls := 0
+	a.lyricsSource = func(context.Context, lrclib.Query) (*lrclib.Lyrics, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("lrclib: 503 Service Unavailable")
+		}
+		return &lrclib.Lyrics{Synced: []lrclib.Line{{At: 0, Text: "first words"}}}, nil
+	}
+	a.queue.restore(playstate.State{Items: tracks("a"), Index: 0, RecStart: -1})
+	a.current = a.queue.current()
+	tt := ui.NewTester(a.miniPlayer, miniWidth, miniTallHeight)
+	tt.Frame()
+	for _, label := range []string{"Show up next, lyrics and related", "Lyrics"} {
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+	}
+	if !tt.HasText("Couldn't load lyrics. Try again in a moment.") || tt.HasText("No lyrics for this song.") {
+		t.Fatalf("a failed lookup is not told apart from no lyrics: %q", tt.Texts())
+	}
+	a.loadPanel()
+	tt.Frame()
+	if calls != 2 || !tt.HasText("first words") {
+		t.Fatalf("the lookup was not tried again: %d calls, %q", calls, tt.Texts())
 	}
 }

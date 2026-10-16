@@ -4,6 +4,7 @@
 package lrclib
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -57,6 +58,9 @@ type Client struct {
 	HTTP *http.Client
 	// BaseURL replaces https://lrclib.net, for tests.
 	BaseURL string
+	// RetryDelay is the wait before the first retry, and twice that before
+	// the second: 700 ms when zero.
+	RetryDelay time.Duration
 }
 
 type response struct {
@@ -74,7 +78,10 @@ func (r response) lyrics() *Lyrics {
 }
 
 // Get finds the lyrics of a track. It returns nil and no error when LRCLIB
-// has none: the exact match is tried first, then a search by title and artist.
+// has none: the exact match is tried first, then a search by title and artist,
+// then by the title cut down to the song's own name. A failing request does not
+// end the lookup, the next step is tried, and the error is only returned when
+// nothing was found at all.
 func (c *Client) Get(ctx context.Context, q Query) (*Lyrics, error) {
 	if q.Title == "" {
 		return nil, nil
@@ -86,32 +93,64 @@ func (c *Client) Get(ctx context.Context, q Query) (*Lyrics, error) {
 	if q.Duration > 0 {
 		values.Set("duration", strconv.Itoa(int(q.Duration.Round(time.Second).Seconds())))
 	}
+	var firstErr error
 	var one response
 	found, err := c.fetch(ctx, "/api/get", values, &one)
-	if err != nil {
-		return nil, err
-	}
+	firstErr = err
 	if found {
 		if l := one.lyrics(); !l.Empty() || l.Instrumental {
 			return l, nil
 		}
 	}
-	search := url.Values{"track_name": {q.Title}, "artist_name": {q.Artist}}
-	var many []response
-	if _, err := c.fetch(ctx, "/api/search", search, &many); err != nil {
-		return nil, err
+	titles := []string{q.Title}
+	if short := ShortTitle(q.Title); short != q.Title {
+		titles = append(titles, short)
 	}
-	var plain *Lyrics
-	for _, r := range many {
-		l := r.lyrics()
-		switch {
-		case len(l.Synced) > 0:
-			return l, nil // the best there is: it has both forms
-		case plain == nil && !l.Empty():
-			plain = l
+	for _, title := range titles {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var many []response
+		if _, err := c.fetch(ctx, "/api/search", url.Values{"track_name": {title}, "artist_name": {q.Artist}}, &many); err != nil {
+			firstErr = cmp.Or(firstErr, err)
+			continue
+		}
+		var plain *Lyrics
+		for _, r := range many {
+			l := r.lyrics()
+			switch {
+			case len(l.Synced) > 0:
+				return l, nil // the best there is: it has both forms
+			case plain == nil && !l.Empty():
+				plain = l
+			}
+		}
+		if plain != nil {
+			return plain, nil
 		}
 	}
-	return plain, nil
+	return nil, firstErr
+}
+
+// ShortTitle is a track title without what YouTube Music adds to it: the
+// translation or version after a " - ", and a "(feat. …)" credit.
+func ShortTitle(title string) string {
+	if i := strings.Index(title, " - "); i > 0 {
+		title = title[:i]
+	}
+	for {
+		open := strings.LastIndexAny(title, "(（")
+		closing := strings.LastIndexAny(title, ")）")
+		if open < 0 || closing < open {
+			break
+		}
+		inner := strings.ToLower(title[open+1 : closing])
+		if !strings.HasPrefix(inner, "feat") && !strings.HasPrefix(inner, "ft.") && !strings.HasPrefix(inner, "with ") {
+			break
+		}
+		title = strings.TrimSpace(title[:open] + title[closing+1:])
+	}
+	return strings.TrimSpace(title)
 }
 
 // fetch reads a JSON answer into out, and reports false for a 404.
@@ -124,32 +163,55 @@ func (c *Client) fetch(ctx context.Context, path string, values url.Values, out 
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	delay := c.RetryDelay
+	if delay == 0 {
+		delay = 700 * time.Millisecond
+	}
+	// LRCLIB answers 5xx now and then, and a request that fails at the
+	// network is as likely to work the next time, so each is tried three times.
+	for attempt := 1; ; attempt++ {
+		found, retry, err := c.fetchOnce(ctx, client, base, path, values, out)
+		if err == nil || !retry || attempt == 3 {
+			return found, err
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(time.Duration(attempt) * delay):
+		}
+	}
+}
+
+// fetchOnce makes one request, and reports whether a failure is worth another.
+func (c *Client) fetchOnce(ctx context.Context, client *http.Client, base, path string, values url.Values, out any) (found, retry bool, err error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?"+values.Encode(), nil)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	request.Header.Set("User-Agent", userAgent)
 	response, err := client.Do(request)
 	if err != nil {
 		log.Printf("lyrics: lrclib GET %s failed: %v", request.URL, err)
-		return false, err
+		return false, ctx.Err() == nil, err
 	}
 	defer response.Body.Close()
 	log.Printf("lyrics: lrclib GET %s -> %s", request.URL, response.Status)
-	if response.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-	if response.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("lrclib: %s", response.Status)
+	switch {
+	case response.StatusCode == http.StatusNotFound:
+		return false, false, nil
+	case response.StatusCode >= 500 || response.StatusCode == http.StatusTooManyRequests:
+		return false, true, fmt.Errorf("lrclib: %s", response.Status)
+	case response.StatusCode != http.StatusOK:
+		return false, false, fmt.Errorf("lrclib: %s", response.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody))
 	if err != nil {
-		return false, err
+		return false, true, err
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return false, errors.New("lrclib: unreadable answer")
+		return false, false, errors.New("lrclib: unreadable answer")
 	}
-	return true, nil
+	return true, false, nil
 }
 
 // restart is how far back the first stamp of a line must jump, from the one

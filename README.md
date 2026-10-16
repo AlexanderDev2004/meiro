@@ -37,6 +37,10 @@ half of the title.
   current track or queue.
   After you select a track, the compact player stays available while you
   browse. Open the full player to view the queue, lyrics, and related tracks.
+- **Follow the lyrics.** The Lyrics tab shows timed lyrics from YouTube Music,
+  or from [LRCLIB](https://lrclib.net) when YouTube Music has none. The line
+  being sung is lit and glides to the middle as the song plays; click a line to
+  jump to it. Switch to Static for the plain text.
 - **Auto-play.** Auto-play is on by default. It adds YouTube Music
   recommendations after the current queue ends. Toggle it in the queue.
 - **Choose an appearance.** Follow the system theme, or choose light or dark.
@@ -55,6 +59,10 @@ half of the title.
   Linux MPRIS client. Meiro publishes track details, cover art, and playback
   state. It accepts play, pause, stop, previous, next, seek, volume, shuffle,
   and repeat commands.
+
+<p align="center">
+  <a href="docs/screenshots/lyrics.png"><img src="docs/screenshots/lyrics.png" alt="Full player with synced lyrics, the sung line lit in the middle" width="720"></a>
+</p>
 
 Browse and play public music without signing in. Meiro signs in with a
 browser session to show your personalized Home feed and Library.

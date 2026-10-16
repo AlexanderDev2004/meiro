@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **Windows release (untested).** Each release now includes a Windows
+  installer (`amd64`) in a full and a minimal build. Windows support is
+  untested: the author has no Windows machine, and no one has run Meiro there.
+
 ### Fixed
 
 - **Songs in the queue no longer show as videos.** The recommended tracks after
